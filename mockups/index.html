@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assistant Terrassement — Maquettes</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f7f7f2;color:#1a1a1a;margin:0;padding:20px}
+h1{font-size:22px} .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.phone{background:#fff;border:2px solid #1b5e20;border-radius:16px;padding:14px;min-height:340px}
+.phone h3{margin:0 0 8px;color:#1b5e20} .btn{display:block;background:#1b5e20;color:#fff;text-align:center;padding:14px;border-radius:10px;margin:8px 0;font-weight:700}
+.btn.orange{background:#ef6c00}.btn.red{background:#b71c1c}.btn.green{background:#1b5e20}
+.big{font-size:28px;font-weight:800}.small{font-size:13px;color:#555}
+.bar{height:14px;background:#eee;border-radius:7px;overflow:hidden;margin:8px 0}.bar>i{display:block;height:100%;background:#1b5e20}
+.warn{background:#fdecea;border:1px solid #b71c1c;padding:8px;border-radius:8px;font-size:13px}
+.info{background:#e8f5e9;border:1px solid #1b5e20;padding:8px;border-radius:8px;font-size:13px}
+</style></head><body>
+<h1>ASSISTANT TERRASSEMENT — Maquettes des écrans principaux</h1>
+<p class="small">Gros boutons (56 dp), contrastes élevés, utilisable avec gants. Thèmes clair/sombre. Orientation paysage/portrait/auto.</p>
+<div class="grid">
+<div class="phone"><h3>1. Accueil</h3><div class="info">Chantier en cours : Maison Dupont — 12 rue des Pins</div><div class="btn">Niveaux</div><div class="btn orange">Pentes</div><div class="btn">Volumes</div><p class="small">Derniers niveaux : P1 +12,5 cm (trop haut)<br>Dernières opérations : Niveau mesuré, Volume enregistré</p></div>
+<div class="phone"><h3>2. Chantier</h3><p>Nom, adresse, client, observations.<br>Recherche par nom/adresse.<br>Suppression avec confirmation.</p><div class="btn">Créer le chantier</div><div class="btn orange">Ouvrir</div></div>
+<div class="phone"><h3>3. Nivellement (NUMÉRIQUE)</h3><p>Plan laser : 101,500 m<br>Mesure : 100,300 m — Demandé : 100,200 m</p><p class="big" style="color:#b71c1c">+10,0 cm TROP HAUT</p><p>À creuser : 10,0 cm • Remblai : 0,0 cm</p><div class="btn red">Calculer</div><p class="small">Modes : SIMPLE / NUMÉRIQUE / GRAPHIQUE (jauge ±50 cm)</p></div>
+<div class="phone"><h3>4. Pente</h3><p>Mode : % / cm/m / 2 altitudes<br>10 m, 20 cm → <b>2,00 % = 2,00 cm/m</b></p><div class="bar"><i style="width:60%"></i></div><p class="small">Profil : 0 m → 0,000 m … 10 m → 0,200 m (montante ▲)</p><div class="btn">Calculer</div></div>
+<div class="phone"><h3>5. Volume</h3><p>Tranchée 10 × 0,40 × 0,80</p><p class="big">3,20 m³</p><p>Surface 4,00 m² • Foisonné (×1,25) : 4,00 m³</p><div class="btn">Calculer</div></div>
+<div class="phone"><h3>6. Implantation</h3><p>4,00 × 3,00 m → diagonale 5,000 m<br>Mesurée : 5,010 m — Écart 1,0 cm ✓</p><div class="btn green">Équerrage OK</div><p class="small">Report au ruban : L×2, l×2, diagonale×2, angles 90°</p></div>
+<div class="phone"><h3>7. Carte IGN</h3><p>SCAN 25 / Ortho • Zoom 16<br>Tuile en cache (hors ligne OK)</p><div class="btn">Télécharger la zone</div><div class="btn orange">Importer GPX (iPhiGéNie)</div><p class="small">Cache : 12,4 Mo • Position GPS affichée</p></div>
+<div class="phone"><h3>8. Réseaux</h3><div class="warn">⚠ ALERTE : GAZ à 0,8 m — classe C, profondeur inconnue. STOP — vérifiez avant de creuser.</div><p class="small">Couleurs : ELEC rouge, GAZ jaune, EAU bleu…<br>Classes A/B/C • Certitudes confirmée→inconnue</p><div class="btn red">Vérifier la proximité</div></div>
+<div class="phone"><h3>9. Plan</h3><p>Zoom / déplacement / rotation / plein écran<br>Calibration : distance connue 10,00 m</p><div class="btn">Importer PDF/JPG/PNG</div><p class="small">Annotations : point, ligne, texte, flèche, réseau, fondation (couche indépendante)</p></div>
+<div class="phone"><h3>10. Rapport</h3><p>Complet (chantier entier) / Simplifié (maçon/client)</p><div class="btn">Rapport complet (PDF)</div><div class="btn orange">Rapport simplifié (PDF)</div><p class="small">Partageable via Drive/e-mail. Généré hors ligne.</p></div>
+</div></body></html>
