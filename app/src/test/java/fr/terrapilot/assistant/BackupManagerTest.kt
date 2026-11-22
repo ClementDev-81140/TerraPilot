@@ -1,6 +1,8 @@
 package fr.terrapilot.assistant
 
+import fr.terrapilot.assistant.data.files.BackupFileOps
 import fr.terrapilot.assistant.data.files.BackupManager
+import fr.terrapilot.assistant.data.files.DefaultBackupFileOps
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Rule
@@ -161,9 +163,11 @@ class BackupManagerTest {
             destMedia,
             File(tmp.root, "st8"),
             ByteArrayInputStream(zipBytes),
-            copyFileFn = { src, dst ->
-                if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
-                src.copyTo(dst, overwrite = true)
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun copyFile(src: File, dst: File) {
+                    if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
+                    DefaultBackupFileOps.copyFile(src, dst)
+                }
             }
         )
         assertFalse(res.success)
@@ -184,13 +188,58 @@ class BackupManagerTest {
             destMedia,
             File(tmp.root, "st9"),
             ByteArrayInputStream(zipBytes),
-            copyFileFn = { src, dst ->
-                if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
-                src.copyTo(dst, overwrite = true)
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun copyFile(src: File, dst: File) {
+                    if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
+                    DefaultBackupFileOps.copyFile(src, dst)
+                }
             }
         )
         assertFalse(res.success)
         assertEquals("OLD_DB", destDb.readText())
         assertFalse(destMedia.exists())
+    }
+
+    @Test
+    fun echec_rollback_conserve_sauvegardes_et_retourne_chemin() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_rb_fail")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val destMedia = File(dbDir, "chantier_files").apply { mkdirs() }
+
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            destMedia,
+            File(tmp.root, "st10"),
+            ByteArrayInputStream(zipBytes),
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun copyFile(src: File, dst: File) {
+                    if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
+                    if (src.name == "terrapilot.db.bak") throw java.io.IOException("Rollback DB fail")
+                    DefaultBackupFileOps.copyFile(src, dst)
+                }
+            }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("rollback incomplet"))
+        assertTrue(res.message.contains("terrapilot_restore_bak_"))
+        val bakDirs = dbDir.listFiles { f -> f.isDirectory && f.name.startsWith("terrapilot_restore_bak_") }
+        assertNotNull(bakDirs)
+        assertEquals(1, bakDirs!!.size)
+        assertEquals("OLD_DB", File(bakDirs[0], "terrapilot.db.bak").readText())
+    }
+
+    @Test
+    fun ancienne_sauvegarde_secours_jamais_ecrasee() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_keep_old_bak")
+        val existingBak = File(dbDir, "terrapilot.db.bak").apply { writeText("PRECIOUS_OLD_BAK") }
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val destMedia = File(dbDir, "chantier_files").apply { mkdirs() }
+
+        val res = BackupManager.restoreToFiles(destDb, destMedia, File(tmp.root, "st11"), ByteArrayInputStream(zipBytes))
+        assertTrue(res.success)
+        assertTrue(existingBak.exists())
+        assertEquals("PRECIOUS_OLD_BAK", existingBak.readText())
     }
 }

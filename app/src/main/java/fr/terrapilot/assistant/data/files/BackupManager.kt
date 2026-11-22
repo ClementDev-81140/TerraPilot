@@ -8,6 +8,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -19,9 +20,32 @@ data class BackupResult(
     val filesCount: Int = 0
 )
 
+interface BackupFileOps {
+    fun copyFile(src: File, dst: File)
+    fun copyDir(src: File, dst: File)
+    fun deleteFile(file: File): Boolean
+    fun deleteDir(dir: File): Boolean
+}
+
+object DefaultBackupFileOps : BackupFileOps {
+    override fun copyFile(src: File, dst: File) {
+        src.copyTo(dst, overwrite = true)
+    }
+
+    override fun copyDir(src: File, dst: File) {
+        if (!src.copyRecursively(dst, overwrite = true)) {
+            throw java.io.IOException("Échec copie répertoire ${src.name}")
+        }
+    }
+
+    override fun deleteFile(file: File): Boolean = !file.exists() || file.delete()
+
+    override fun deleteDir(dir: File): Boolean = !dir.exists() || dir.deleteRecursively()
+}
+
 object BackupManager {
-    const val MAX_ENTRY_BYTES = 50L * 1024 * 1024 // 50 Mo max par entrée
-    const val MAX_TOTAL_BYTES = 250L * 1024 * 1024 // 250 Mo max total
+    const val MAX_ENTRY_BYTES = 50L * 1024 * 1024
+    const val MAX_TOTAL_BYTES = 250L * 1024 * 1024
     const val MAX_ENTRIES = 5000
 
     private fun sha256Hex(file: File): String {
@@ -139,9 +163,9 @@ object BackupManager {
             val inp = context.contentResolver.openInputStream(srcUri)
                 ?: return BackupResult(false, "Impossible de lire l'archive.")
             inp.use {
-                restoreToFiles(dbFile, mediaDir, stagingDir, it) {
+                restoreToFiles(dbFile, mediaDir, stagingDir, it, beforeDbReplace = {
                     AppDatabase.closeAndReset()
-                }
+                })
             }
         } catch (e: Exception) {
             BackupResult(false, "Erreur restauration : ${e.message}")
@@ -157,11 +181,13 @@ object BackupManager {
         maxTotalBytes: Long = MAX_TOTAL_BYTES,
         maxEntries: Int = MAX_ENTRIES,
         beforeDbReplace: () -> Unit = {},
-        copyFileFn: (File, File) -> Unit = { src, dst -> src.copyTo(dst, overwrite = true) }
+        fileOps: BackupFileOps = DefaultBackupFileOps
     ): BackupResult {
         stagingDir.mkdirs()
-        val bakDb = File(dbFile.parentFile, "terrapilot.db.bak")
-        val bakMedia = File(mediaDir.parentFile, "chantier_files.bak_${System.currentTimeMillis()}")
+        val uniqueId = "${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}"
+        val backupDir = File(dbFile.parentFile ?: stagingDir.parentFile, "terrapilot_restore_bak_$uniqueId")
+        val bakDb = File(backupDir, "terrapilot.db.bak")
+        val bakMedia = File(backupDir, "chantier_files.bak")
 
         return try {
             var manifestObj: JSONObject? = null
@@ -238,32 +264,31 @@ object BackupManager {
                 return BackupResult(false, "Archive rejetée : fichiers sans hash dans le manifeste ($missingInManifest).")
             }
 
-            // Phase transactionnelle : fermeture Room obligatoire avant remplacement
             try {
                 beforeDbReplace()
             } catch (e: Exception) {
                 return BackupResult(false, "Restauration annulée : échec fermeture base active (${e.message}).")
             }
 
-            val hadOldDb = dbFile.exists()
-            val hadOldMedia = mediaDir.exists()
-            if (hadOldDb) {
-                dbFile.copyTo(bakDb, overwrite = true)
-            }
-            if (hadOldMedia) {
-                mediaDir.copyRecursively(bakMedia, overwrite = true)
+            val walFile = File(dbFile.path + "-wal")
+            val shmFile = File(dbFile.path + "-shm")
+            if (!fileOps.deleteFile(walFile) || !fileOps.deleteFile(shmFile)) {
+                return BackupResult(false, "Restauration annulée : impossible de nettoyer les fichiers SQLite WAL/SHM.")
             }
 
-            File(dbFile.path + "-wal").delete()
-            File(dbFile.path + "-shm").delete()
+            val hadOldDb = dbFile.exists()
+            val hadOldMedia = mediaDir.exists()
+            backupDir.mkdirs()
+            if (hadOldDb) fileOps.copyFile(dbFile, bakDb)
+            if (hadOldMedia) fileOps.copyDir(mediaDir, bakMedia)
 
             try {
                 dbFile.parentFile?.mkdirs()
-                copyFileFn(stagedDb, dbFile)
+                fileOps.copyFile(stagedDb, dbFile)
 
                 val stagedMedia = File(stagingDir, "chantier_files")
-                if (mediaDir.exists()) {
-                    mediaDir.deleteRecursively()
+                if (mediaDir.exists() && !fileOps.deleteDir(mediaDir)) {
+                    throw java.io.IOException("Impossible de supprimer l'ancien dossier média.")
                 }
                 var restoredCount = 1
                 if (stagedMedia.exists()) {
@@ -272,41 +297,37 @@ object BackupManager {
                         val rel = f.relativeTo(stagedMedia)
                         val dest = File(mediaDir, rel.path)
                         dest.parentFile?.mkdirs()
-                        copyFileFn(f, dest)
+                        fileOps.copyFile(f, dest)
                         restoredCount++
                     }
                 }
-                // Suppression des sauvegardes uniquement après confirmation complète
-                if (hadOldDb) bakDb.delete()
-                if (hadOldMedia) bakMedia.deleteRecursively()
+                fileOps.deleteDir(backupDir)
                 BackupResult(true, "Restauration sécurisée réussie ($restoredCount fichiers).", filesCount = restoredCount)
             } catch (e: Exception) {
-                // Rollback complet base + médias
                 var rollbackOk = true
                 try {
                     if (hadOldDb) {
-                        bakDb.copyTo(dbFile, overwrite = true)
-                    } else {
-                        dbFile.delete()
+                        fileOps.copyFile(bakDb, dbFile)
+                    } else if (!fileOps.deleteFile(dbFile)) {
+                        rollbackOk = false
                     }
                     if (hadOldMedia) {
-                        mediaDir.deleteRecursively()
-                        bakMedia.copyRecursively(mediaDir, overwrite = true)
-                    } else {
-                        mediaDir.deleteRecursively()
+                        if (!fileOps.deleteDir(mediaDir)) rollbackOk = false
+                        else fileOps.copyDir(bakMedia, mediaDir)
+                    } else if (!fileOps.deleteDir(mediaDir)) {
+                        rollbackOk = false
                     }
                 } catch (_: Exception) {
                     rollbackOk = false
                 }
 
                 if (rollbackOk) {
-                    if (hadOldDb) bakDb.delete()
-                    if (hadOldMedia) bakMedia.deleteRecursively()
+                    fileOps.deleteDir(backupDir)
                     BackupResult(false, "Échec restauration, état précédent intégralement restauré : ${e.message}")
                 } else {
                     BackupResult(
                         false,
-                        "Échec restauration ET rollback incomplet. Sauvegardes conservées : ${bakDb.absolutePath} ; ${bakMedia.absolutePath}"
+                        "Échec restauration ET rollback incomplet. Sauvegardes conservées dans : ${backupDir.absolutePath}"
                     )
                 }
             }
