@@ -156,7 +156,8 @@ object BackupManager {
         maxEntryBytes: Long = MAX_ENTRY_BYTES,
         maxTotalBytes: Long = MAX_TOTAL_BYTES,
         maxEntries: Int = MAX_ENTRIES,
-        beforeDbReplace: () -> Unit = {}
+        beforeDbReplace: () -> Unit = {},
+        copyFileFn: (File, File) -> Unit = { src, dst -> src.copyTo(dst, overwrite = true) }
     ): BackupResult {
         stagingDir.mkdirs()
         val bakDb = File(dbFile.parentFile, "terrapilot.db.bak")
@@ -237,15 +238,19 @@ object BackupManager {
                 return BackupResult(false, "Archive rejetée : fichiers sans hash dans le manifeste ($missingInManifest).")
             }
 
-            // Phase transactionnelle : fermeture Room + sauvegarde de l'état actif
+            // Phase transactionnelle : fermeture Room obligatoire avant remplacement
             try {
                 beforeDbReplace()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                return BackupResult(false, "Restauration annulée : échec fermeture base active (${e.message}).")
+            }
 
-            if (dbFile.exists()) {
+            val hadOldDb = dbFile.exists()
+            val hadOldMedia = mediaDir.exists()
+            if (hadOldDb) {
                 dbFile.copyTo(bakDb, overwrite = true)
             }
-            if (mediaDir.exists()) {
+            if (hadOldMedia) {
                 mediaDir.copyRecursively(bakMedia, overwrite = true)
             }
 
@@ -254,7 +259,7 @@ object BackupManager {
 
             try {
                 dbFile.parentFile?.mkdirs()
-                stagedDb.copyTo(dbFile, overwrite = true)
+                copyFileFn(stagedDb, dbFile)
 
                 val stagedMedia = File(stagingDir, "chantier_files")
                 if (mediaDir.exists()) {
@@ -267,29 +272,48 @@ object BackupManager {
                         val rel = f.relativeTo(stagedMedia)
                         val dest = File(mediaDir, rel.path)
                         dest.parentFile?.mkdirs()
-                        f.copyTo(dest, overwrite = true)
+                        copyFileFn(f, dest)
                         restoredCount++
                     }
                 }
-                bakDb.delete()
-                bakMedia.deleteRecursively()
+                // Suppression des sauvegardes uniquement après confirmation complète
+                if (hadOldDb) bakDb.delete()
+                if (hadOldMedia) bakMedia.deleteRecursively()
                 BackupResult(true, "Restauration sécurisée réussie ($restoredCount fichiers).", filesCount = restoredCount)
             } catch (e: Exception) {
                 // Rollback complet base + médias
-                if (bakDb.exists()) {
-                    bakDb.copyTo(dbFile, overwrite = true)
+                var rollbackOk = true
+                try {
+                    if (hadOldDb) {
+                        bakDb.copyTo(dbFile, overwrite = true)
+                    } else {
+                        dbFile.delete()
+                    }
+                    if (hadOldMedia) {
+                        mediaDir.deleteRecursively()
+                        bakMedia.copyRecursively(mediaDir, overwrite = true)
+                    } else {
+                        mediaDir.deleteRecursively()
+                    }
+                } catch (_: Exception) {
+                    rollbackOk = false
                 }
-                if (bakMedia.exists()) {
-                    mediaDir.deleteRecursively()
-                    bakMedia.copyRecursively(mediaDir, overwrite = true)
+
+                if (rollbackOk) {
+                    if (hadOldDb) bakDb.delete()
+                    if (hadOldMedia) bakMedia.deleteRecursively()
+                    BackupResult(false, "Échec restauration, état précédent intégralement restauré : ${e.message}")
+                } else {
+                    BackupResult(
+                        false,
+                        "Échec restauration ET rollback incomplet. Sauvegardes conservées : ${bakDb.absolutePath} ; ${bakMedia.absolutePath}"
+                    )
                 }
-                BackupResult(false, "Échec restauration, état précédent intégralement restauré : ${e.message}")
             }
         } catch (e: Exception) {
             BackupResult(false, "Erreur restauration : ${e.message}")
         } finally {
             stagingDir.deleteRecursively()
-            bakMedia.deleteRecursively()
         }
     }
 }

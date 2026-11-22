@@ -131,4 +131,66 @@ class BackupManagerTest {
         assertFalse(res.success)
         assertEquals("KEEP_ME", destDb.readText())
     }
+
+    @Test
+    fun echec_fermeture_room_annule_restauration() {
+        val zipBytes = createSampleZip()
+        val destDb = File(tmp.root, "dest_room_fail.db").apply { writeText("KEEP_ME") }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            File(tmp.root, "m7"),
+            File(tmp.root, "st7"),
+            ByteArrayInputStream(zipBytes),
+            beforeDbReplace = { throw IllegalStateException("Room lock") }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("échec fermeture base active"))
+        assertEquals("KEEP_ME", destDb.readText())
+    }
+
+    @Test
+    fun echec_copie_media_rollback_complet_avec_ancien_dossier() {
+        val zipBytes = createSampleZip()
+        val destDb = File(tmp.root, "dest_rb1.db").apply { writeText("OLD_DB") }
+        val destMedia = File(tmp.root, "dest_rb1_media").apply {
+            mkdirs()
+            File(this, "old.jpg").writeText("OLD_PHOTO")
+        }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            destMedia,
+            File(tmp.root, "st8"),
+            ByteArrayInputStream(zipBytes),
+            copyFileFn = { src, dst ->
+                if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
+                src.copyTo(dst, overwrite = true)
+            }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("intégralement restauré"))
+        assertEquals("OLD_DB", destDb.readText())
+        assertEquals("OLD_PHOTO", File(destMedia, "old.jpg").readText())
+        assertFalse(File(destMedia, "photo1.jpg").exists())
+    }
+
+    @Test
+    fun echec_copie_media_rollback_sans_ancien_dossier() {
+        val zipBytes = createSampleZip()
+        val destDb = File(tmp.root, "dest_rb2.db").apply { writeText("OLD_DB") }
+        val destMedia = File(tmp.root, "dest_rb2_media_absent")
+        assertFalse(destMedia.exists())
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            destMedia,
+            File(tmp.root, "st9"),
+            ByteArrayInputStream(zipBytes),
+            copyFileFn = { src, dst ->
+                if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
+                src.copyTo(dst, overwrite = true)
+            }
+        )
+        assertFalse(res.success)
+        assertEquals("OLD_DB", destDb.readText())
+        assertFalse(destMedia.exists())
+    }
 }
