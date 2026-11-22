@@ -366,4 +366,17 @@ class BackupManagerTest {
         assertTrue(res.message.contains("terrapilot_restore_bak_"))
         assertEquals("OLD_DB", destDb.readText())
     }
+
+    @Test
+    fun maintenance_lock_serialise_et_reinitialise_apres_exception() {
+        try {
+            fr.terrapilot.assistant.data.db.AppDatabase.runWithMaintenanceLock<Unit> {
+                throw RuntimeException("Erreur simulée")
+            }
+            fail("Une exception était attendue")
+        } catch (_: RuntimeException) {
+        }
+        val ok = fr.terrapilot.assistant.data.db.AppDatabase.runWithReadLock { true }
+        assertTrue(ok)
+    }
 }

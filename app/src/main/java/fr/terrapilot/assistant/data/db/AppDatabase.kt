@@ -38,10 +38,20 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
         private val maintenanceLock = ReentrantLock()
+        @Volatile
+        private var maintenanceInProgress = false
+        @Volatile
+        private var maintenanceThread: Thread? = null
 
         fun get(context: Context): AppDatabase {
+            if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
+                throw IllegalStateException("Accès à AppDatabase refusé : maintenance en cours sur ce thread.")
+            }
             maintenanceLock.lock()
             try {
+                if (maintenanceInProgress) {
+                    throw IllegalStateException("Accès à AppDatabase refusé : maintenance active.")
+                }
                 return INSTANCE ?: synchronized(this) {
                     INSTANCE ?: Room.databaseBuilder(
                         context.applicationContext,
@@ -54,7 +64,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun closeAndReset() {
+        private fun closeAndReset() {
             synchronized(this) {
                 INSTANCE?.close()
                 INSTANCE = null
@@ -63,8 +73,21 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun <T> runWithMaintenanceLock(block: () -> T): T {
             maintenanceLock.lock()
+            maintenanceInProgress = true
+            maintenanceThread = Thread.currentThread()
             try {
                 closeAndReset()
+                return block()
+            } finally {
+                maintenanceThread = null
+                maintenanceInProgress = false
+                maintenanceLock.unlock()
+            }
+        }
+
+        fun <T> runWithReadLock(block: () -> T): T {
+            maintenanceLock.lock()
+            try {
                 return block()
             } finally {
                 maintenanceLock.unlock()

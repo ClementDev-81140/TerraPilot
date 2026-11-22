@@ -116,9 +116,11 @@ object BackupManager {
         val dbFile = context.getDatabasePath("terrapilot.db")
         val mediaDir = File(context.filesDir, "chantier_files")
         return try {
-            val out = context.contentResolver.openOutputStream(destUri)
-                ?: return BackupResult(false, "Impossible d'ouvrir la destination.")
-            out.use { exportFromFiles(dbFile, mediaDir, it) }
+            AppDatabase.runWithReadLock {
+                val out = context.contentResolver.openOutputStream(destUri)
+                    ?: return@runWithReadLock BackupResult(false, "Impossible d'ouvrir la destination.")
+                out.use { exportFromFiles(dbFile, mediaDir, it) }
+            }
         } catch (e: Exception) {
             BackupResult(false, "Erreur export : ${e.message}")
         }
@@ -183,7 +185,7 @@ object BackupManager {
         }
     }
 
-    fun restoreToFiles(
+    internal fun restoreToFiles(
         dbFile: File,
         mediaDir: File,
         stagingDir: File,
