@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import java.util.concurrent.locks.ReentrantLock
 
 @Database(
     entities = [
@@ -36,14 +37,20 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+        private val maintenanceLock = ReentrantLock()
 
         fun get(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "terrapilot.db"
-                ).build().also { INSTANCE = it }
+            maintenanceLock.lock()
+            try {
+                return INSTANCE ?: synchronized(this) {
+                    INSTANCE ?: Room.databaseBuilder(
+                        context.applicationContext,
+                        AppDatabase::class.java,
+                        "terrapilot.db"
+                    ).build().also { INSTANCE = it }
+                }
+            } finally {
+                maintenanceLock.unlock()
             }
         }
 
@@ -51,6 +58,16 @@ abstract class AppDatabase : RoomDatabase() {
             synchronized(this) {
                 INSTANCE?.close()
                 INSTANCE = null
+            }
+        }
+
+        fun <T> runWithMaintenanceLock(block: () -> T): T {
+            maintenanceLock.lock()
+            try {
+                closeAndReset()
+                return block()
+            } finally {
+                maintenanceLock.unlock()
             }
         }
     }

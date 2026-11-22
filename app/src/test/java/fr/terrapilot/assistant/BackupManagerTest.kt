@@ -251,7 +251,7 @@ class BackupManagerTest {
         File(dbDir, "terrapilot.db-wal").writeText("UNCHECKPOINTED_TX")
         val res = BackupManager.restoreToFiles(destDb, File(dbDir, "m"), File(tmp.root, "st12"), ByteArrayInputStream(zipBytes))
         assertFalse(res.success)
-        assertTrue(res.message.contains("WAL non vide"))
+        assertTrue(res.message.contains("WAL résiduel détecté"))
         assertEquals("OLD_DB", destDb.readText())
     }
 
@@ -316,5 +316,54 @@ class BackupManagerTest {
         assertTrue(res.success)
         assertTrue(res.message.contains("nettoyage incomplet"))
         assertTrue(res.message.contains("terrapilot_restore_bak_"))
+    }
+
+    @Test
+    fun echec_suppression_wal_annule_restauration() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_wal_del_fail")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            File(dbDir, "m"),
+            File(tmp.root, "st16"),
+            ByteArrayInputStream(zipBytes),
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun deleteFile(file: File): Boolean {
+                    if (file.name.endsWith("-wal")) return false
+                    return DefaultBackupFileOps.deleteFile(file)
+                }
+            }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("WAL/SHM"))
+        assertEquals("OLD_DB", destDb.readText())
+    }
+
+    @Test
+    fun echec_suppression_backup_dir_apres_rollback_signale_chemin() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_rb_del_bak_fail")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            File(dbDir, "m"),
+            File(tmp.root, "st17"),
+            ByteArrayInputStream(zipBytes),
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun copyFile(src: File, dst: File) {
+                    if (src.name == "photo1.jpg") throw java.io.IOException("Disk full")
+                    DefaultBackupFileOps.copyFile(src, dst)
+                }
+                override fun deleteDir(dir: File): Boolean {
+                    if (dir.name.startsWith("terrapilot_restore_bak_")) return false
+                    return DefaultBackupFileOps.deleteDir(dir)
+                }
+            }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("sauvegardes temporaires conservées"))
+        assertTrue(res.message.contains("terrapilot_restore_bak_"))
+        assertEquals("OLD_DB", destDb.readText())
     }
 }

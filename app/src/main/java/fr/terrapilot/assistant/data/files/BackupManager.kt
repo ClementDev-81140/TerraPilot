@@ -30,8 +30,13 @@ interface BackupFileOps {
 
 object DefaultBackupFileOps : BackupFileOps {
     override fun createUniqueDir(dir: File): Boolean {
-        if (dir.exists()) return false
-        return dir.mkdirs()
+        return try {
+            dir.parentFile?.mkdirs()
+            java.nio.file.Files.createDirectory(dir.toPath())
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     override fun copyFile(src: File, dst: File) {
@@ -166,12 +171,12 @@ object BackupManager {
         val mediaDir = File(context.filesDir, "chantier_files")
         val stagingDir = File(context.cacheDir, "restore_staging_${System.currentTimeMillis()}")
         return try {
-            val inp = context.contentResolver.openInputStream(srcUri)
-                ?: return BackupResult(false, "Impossible de lire l'archive.")
-            inp.use {
-                restoreToFiles(dbFile, mediaDir, stagingDir, it, beforeDbReplace = {
-                    AppDatabase.closeAndReset()
-                })
+            AppDatabase.runWithMaintenanceLock {
+                val inp = context.contentResolver.openInputStream(srcUri)
+                    ?: return@runWithMaintenanceLock BackupResult(false, "Impossible de lire l'archive.")
+                inp.use {
+                    restoreToFiles(dbFile, mediaDir, stagingDir, it)
+                }
             }
         } catch (e: Exception) {
             BackupResult(false, "Erreur restauration : ${e.message}")
@@ -276,11 +281,11 @@ object BackupManager {
                 return BackupResult(false, "Restauration annulée : échec fermeture base active (${e.message}).")
             }
 
-            // Stratégie SQLite WAL/SHM : après fermeture Room, un WAL non vide indique un checkpoint incomplet.
+            // Option A (stratégie conservatrice) : si un WAL résiduel non vide subsiste, ne jamais le supprimer.
             val walFile = File(dbFile.path + "-wal")
             val shmFile = File(dbFile.path + "-shm")
             if (walFile.exists() && walFile.length() > 0L) {
-                return BackupResult(false, "Restauration annulée : fichier WAL non vide (${walFile.length()} octets), transactions potentiellement non intégrées.")
+                return BackupResult(false, "WAL résiduel détecté, état SQLite non confirmé, restauration annulée.")
             }
             if (!fileOps.deleteFile(walFile) || !fileOps.deleteFile(shmFile)) {
                 return BackupResult(false, "Restauration annulée : impossible de nettoyer les fichiers SQLite WAL/SHM.")
