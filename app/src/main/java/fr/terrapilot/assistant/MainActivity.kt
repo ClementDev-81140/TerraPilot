@@ -44,12 +44,13 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val db = AppDatabase.get(this)
         val settingsRepo = SettingsRepository(this)
 
         setContent {
+            val dbEpoch by AppDatabase.epoch.collectAsState()
+            val db = remember(dbEpoch) { AppDatabase.get(this) }
             val settings by settingsRepo.settingsFlow.collectAsState(initial = AppSettings())
-            val chantiers by db.chantierDao().observeAll().collectAsState(initial = emptyList())
+            val chantiers by key(dbEpoch) { db.chantierDao().observeAll().collectAsState(initial = emptyList()) }
             val activeChantier = chantiers.find { it.id == settings.activeChantierId } ?: chantiers.firstOrNull()
 
             LaunchedEffect(settings.orientationMode) {
@@ -105,7 +106,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     ) { padding ->
-                        Box(Modifier.padding(padding).fillMaxSize()) {
+                        key(dbEpoch) {
+                            Box(Modifier.padding(padding).fillMaxSize()) {
                             val cid = activeChantier?.id ?: -1L
                             when (currentRoute) {
                                 "accueil" -> HomeScreen(db, activeChantier) { currentRoute = it }
@@ -124,6 +126,7 @@ class MainActivity : ComponentActivity() {
                                 "sauvegardes" -> SauvegardesScreen()
                                 "parametres" -> ParametresScreen(settings, settingsRepo)
                             }
+                        }
                         }
                     }
                 }
