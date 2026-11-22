@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import java.util.concurrent.locks.ReentrantLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 @Database(
     entities = [
@@ -37,17 +39,20 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
-        private val maintenanceLock = ReentrantLock()
+        private val rwLock = ReentrantReadWriteLock()
         @Volatile
         private var maintenanceInProgress = false
         @Volatile
         private var maintenanceThread: Thread? = null
 
+        private val _epoch = MutableStateFlow(0L)
+        val epoch: StateFlow<Long> = _epoch
+
         fun get(context: Context): AppDatabase {
             if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
                 throw IllegalStateException("Accès à AppDatabase refusé : maintenance en cours sur ce thread.")
             }
-            maintenanceLock.lock()
+            rwLock.readLock().lock()
             try {
                 if (maintenanceInProgress) {
                     throw IllegalStateException("Accès à AppDatabase refusé : maintenance active.")
@@ -60,7 +65,7 @@ abstract class AppDatabase : RoomDatabase() {
                     ).build().also { INSTANCE = it }
                 }
             } finally {
-                maintenanceLock.unlock()
+                rwLock.readLock().unlock()
             }
         }
 
@@ -72,7 +77,10 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         fun <T> runWithMaintenanceLock(block: () -> T): T {
-            maintenanceLock.lock()
+            if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
+                throw IllegalStateException("Maintenance imbriquée interdite sur ce thread.")
+            }
+            rwLock.writeLock().lock()
             maintenanceInProgress = true
             maintenanceThread = Thread.currentThread()
             try {
@@ -81,16 +89,23 @@ abstract class AppDatabase : RoomDatabase() {
             } finally {
                 maintenanceThread = null
                 maintenanceInProgress = false
-                maintenanceLock.unlock()
+                _epoch.value = _epoch.value + 1
+                rwLock.writeLock().unlock()
             }
         }
 
         fun <T> runWithReadLock(block: () -> T): T {
-            maintenanceLock.lock()
+            if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
+                throw IllegalStateException("Lecture/export interdit pendant une maintenance sur ce thread.")
+            }
+            rwLock.readLock().lock()
             try {
+                if (maintenanceInProgress) {
+                    throw IllegalStateException("Lecture/export refusé : maintenance active.")
+                }
                 return block()
             } finally {
-                maintenanceLock.unlock()
+                rwLock.readLock().unlock()
             }
         }
     }

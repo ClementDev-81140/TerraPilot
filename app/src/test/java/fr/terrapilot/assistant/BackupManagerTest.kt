@@ -379,4 +379,30 @@ class BackupManagerTest {
         val ok = fr.terrapilot.assistant.data.db.AppDatabase.runWithReadLock { true }
         assertTrue(ok)
     }
+
+    @Test
+    fun maintenance_imbriquee_refusee() {
+        var nestedRefused = false
+        fr.terrapilot.assistant.data.db.AppDatabase.runWithMaintenanceLock {
+            try {
+                fr.terrapilot.assistant.data.db.AppDatabase.runWithMaintenanceLock { }
+            } catch (e: IllegalStateException) {
+                nestedRefused = e.message?.contains("imbriquée") == true
+            }
+        }
+        assertTrue(nestedRefused)
+    }
+
+    @Test
+    fun export_depuis_thread_proprietaire_pendant_maintenance_refuse() {
+        var readRefused = false
+        fr.terrapilot.assistant.data.db.AppDatabase.runWithMaintenanceLock {
+            try {
+                fr.terrapilot.assistant.data.db.AppDatabase.runWithReadLock { }
+            } catch (e: IllegalStateException) {
+                readRefused = e.message?.contains("interdit") == true
+            }
+        }
+        assertTrue(readRefused)
+    }
 }
