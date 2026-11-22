@@ -21,6 +21,7 @@ data class BackupResult(
 )
 
 interface BackupFileOps {
+    fun createUniqueDir(dir: File): Boolean
     fun copyFile(src: File, dst: File)
     fun copyDir(src: File, dst: File)
     fun deleteFile(file: File): Boolean
@@ -28,6 +29,11 @@ interface BackupFileOps {
 }
 
 object DefaultBackupFileOps : BackupFileOps {
+    override fun createUniqueDir(dir: File): Boolean {
+        if (dir.exists()) return false
+        return dir.mkdirs()
+    }
+
     override fun copyFile(src: File, dst: File) {
         src.copyTo(dst, overwrite = true)
     }
@@ -184,7 +190,7 @@ object BackupManager {
         fileOps: BackupFileOps = DefaultBackupFileOps
     ): BackupResult {
         stagingDir.mkdirs()
-        val uniqueId = "${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}"
+        val uniqueId = "${System.currentTimeMillis()}_${UUID.randomUUID()}"
         val backupDir = File(dbFile.parentFile ?: stagingDir.parentFile, "terrapilot_restore_bak_$uniqueId")
         val bakDb = File(backupDir, "terrapilot.db.bak")
         val bakMedia = File(backupDir, "chantier_files.bak")
@@ -270,17 +276,28 @@ object BackupManager {
                 return BackupResult(false, "Restauration annulée : échec fermeture base active (${e.message}).")
             }
 
+            // Stratégie SQLite WAL/SHM : après fermeture Room, un WAL non vide indique un checkpoint incomplet.
             val walFile = File(dbFile.path + "-wal")
             val shmFile = File(dbFile.path + "-shm")
+            if (walFile.exists() && walFile.length() > 0L) {
+                return BackupResult(false, "Restauration annulée : fichier WAL non vide (${walFile.length()} octets), transactions potentiellement non intégrées.")
+            }
             if (!fileOps.deleteFile(walFile) || !fileOps.deleteFile(shmFile)) {
                 return BackupResult(false, "Restauration annulée : impossible de nettoyer les fichiers SQLite WAL/SHM.")
             }
 
+            if (!fileOps.createUniqueDir(backupDir)) {
+                return BackupResult(false, "Restauration annulée : impossible de créer un répertoire de sauvegarde unique (${backupDir.absolutePath}).")
+            }
+
             val hadOldDb = dbFile.exists()
             val hadOldMedia = mediaDir.exists()
-            backupDir.mkdirs()
-            if (hadOldDb) fileOps.copyFile(dbFile, bakDb)
-            if (hadOldMedia) fileOps.copyDir(mediaDir, bakMedia)
+            try {
+                if (hadOldDb) fileOps.copyFile(dbFile, bakDb)
+                if (hadOldMedia) fileOps.copyDir(mediaDir, bakMedia)
+            } catch (e: Exception) {
+                return BackupResult(false, "Restauration annulée : échec création sauvegarde (${e.message}). Fichiers conservés dans : ${backupDir.absolutePath}")
+            }
 
             try {
                 dbFile.parentFile?.mkdirs()
@@ -301,8 +318,13 @@ object BackupManager {
                         restoredCount++
                     }
                 }
-                fileOps.deleteDir(backupDir)
-                BackupResult(true, "Restauration sécurisée réussie ($restoredCount fichiers).", filesCount = restoredCount)
+                val cleanupOk = fileOps.deleteDir(backupDir)
+                val msg = if (cleanupOk) {
+                    "Restauration sécurisée réussie ($restoredCount fichiers)."
+                } else {
+                    "Restauration réussie ($restoredCount fichiers), mais nettoyage incomplet : sauvegardes temporaires conservées dans ${backupDir.absolutePath}"
+                }
+                BackupResult(true, msg, filesCount = restoredCount)
             } catch (e: Exception) {
                 var rollbackOk = true
                 try {
@@ -322,8 +344,13 @@ object BackupManager {
                 }
 
                 if (rollbackOk) {
-                    fileOps.deleteDir(backupDir)
-                    BackupResult(false, "Échec restauration, état précédent intégralement restauré : ${e.message}")
+                    val cleanupOk = fileOps.deleteDir(backupDir)
+                    val msg = if (cleanupOk) {
+                        "Échec restauration, état précédent intégralement restauré : ${e.message}"
+                    } else {
+                        "Échec restauration, état précédent restauré, mais sauvegardes temporaires conservées dans : ${backupDir.absolutePath}"
+                    }
+                    BackupResult(false, msg)
                 } else {
                     BackupResult(
                         false,

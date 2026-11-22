@@ -242,4 +242,79 @@ class BackupManagerTest {
         assertTrue(existingBak.exists())
         assertEquals("PRECIOUS_OLD_BAK", existingBak.readText())
     }
+
+    @Test
+    fun wal_non_vide_annule_restauration() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_wal")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        File(dbDir, "terrapilot.db-wal").writeText("UNCHECKPOINTED_TX")
+        val res = BackupManager.restoreToFiles(destDb, File(dbDir, "m"), File(tmp.root, "st12"), ByteArrayInputStream(zipBytes))
+        assertFalse(res.success)
+        assertTrue(res.message.contains("WAL non vide"))
+        assertEquals("OLD_DB", destDb.readText())
+    }
+
+    @Test
+    fun echec_suppression_shm_annule_restauration() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_shm")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            File(dbDir, "m"),
+            File(tmp.root, "st13"),
+            ByteArrayInputStream(zipBytes),
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun deleteFile(file: File): Boolean {
+                    if (file.name.endsWith("-shm")) return false
+                    return DefaultBackupFileOps.deleteFile(file)
+                }
+            }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("WAL/SHM"))
+        assertEquals("OLD_DB", destDb.readText())
+    }
+
+    @Test
+    fun echec_creation_backup_dir_annule_restauration() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_mkdir_fail")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            File(dbDir, "m"),
+            File(tmp.root, "st14"),
+            ByteArrayInputStream(zipBytes),
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun createUniqueDir(dir: File): Boolean = false
+            }
+        )
+        assertFalse(res.success)
+        assertTrue(res.message.contains("répertoire de sauvegarde unique"))
+        assertEquals("OLD_DB", destDb.readText())
+    }
+
+    @Test
+    fun echec_suppression_backup_dir_apres_succes_signale_chemin() {
+        val zipBytes = createSampleZip()
+        val dbDir = tmp.newFolder("db_del_bak_ok")
+        val destDb = File(dbDir, "terrapilot.db").apply { writeText("OLD_DB") }
+        val res = BackupManager.restoreToFiles(
+            destDb,
+            File(dbDir, "m"),
+            File(tmp.root, "st15"),
+            ByteArrayInputStream(zipBytes),
+            fileOps = object : BackupFileOps by DefaultBackupFileOps {
+                override fun deleteDir(dir: File): Boolean {
+                    if (dir.name.startsWith("terrapilot_restore_bak_")) return false
+                    return DefaultBackupFileOps.deleteDir(dir)
+                }
+            }
+        )
+        assertTrue(res.success)
+        assertTrue(res.message.contains("nettoyage incomplet"))
+        assertTrue(res.message.contains("terrapilot_restore_bak_"))
+    }
 }
