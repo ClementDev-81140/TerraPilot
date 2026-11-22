@@ -146,4 +146,26 @@ class CalculsTest {
         assertEquals(1.0, alert.distanceMeters, 0.001)
         assertEquals(1.5, alert.effectiveMarginMeters, 0.001)
     }
+
+    @Test
+    fun releve_terrain_incline_points_irreguliers() {
+        val pts = listOf(
+            SurveyPointData("P1", 0.0, 0.0, 100.0, "ruban"),
+            SurveyPointData("P2", 10.0, 0.0, 101.0, "ruban"),
+            SurveyPointData("P3", 10.0, 10.0, 101.0, "ruban"),
+            SurveyPointData("P4", 0.0, 10.0, 100.0, "ruban"),
+            SurveyPointData("P5", 3.5, 6.2, 100.35, "ruban")
+        )
+        val res = SurveyCalculator.gridIdwCutFill(pts, targetZ = 100.0, gridResolution = 10)
+        assertTrue(res.cutM3 > 30.0 && res.cutM3 < 70.0)
+        assertEquals(0.0, res.fillM3, 0.001)
+    }
+
+    @Test
+    fun reseau_segment_degenere_et_extremites() {
+        val deg = NetworkSegment(2.0, 3.0, 2.0, 3.0)
+        assertEquals(5.0, NetworkProximityCalculator.distancePointToSegment(5.0, 7.0, deg), 0.001)
+        val seg = NetworkSegment(0.0, 0.0, 10.0, 0.0)
+        assertEquals(5.0, NetworkProximityCalculator.distancePointToSegment(13.0, 4.0, seg), 0.001)
+    }
 }
