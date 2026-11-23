@@ -66,8 +66,8 @@ class DatabaseAccessGateTest {
         var dbClosed = false
 
         val flowJob = launch {
-            kotlinx.coroutines.flow.flow {
-                DatabaseAccessGate.withOperation {
+            DatabaseAccessGate.observeFlowWithProvider {
+                kotlinx.coroutines.flow.flow {
                     collecting.complete(Unit)
                     emit(1)
                     kotlinx.coroutines.delay(5000)
@@ -77,7 +77,9 @@ class DatabaseAccessGateTest {
         collecting.await()
 
         val maintJob = launch {
-            DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) { }
+            DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
+                assertTrue(DatabaseAccessGate.maintenanceState.value)
+            }
         }
         kotlinx.coroutines.delay(50)
         assertFalse(dbClosed)
@@ -86,5 +88,6 @@ class DatabaseAccessGateTest {
         flowJob.join()
         maintJob.join()
         assertTrue(dbClosed)
+        assertFalse(DatabaseAccessGate.maintenanceState.value)
     }
 }

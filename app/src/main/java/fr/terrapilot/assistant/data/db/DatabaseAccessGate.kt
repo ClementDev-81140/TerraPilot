@@ -2,8 +2,11 @@ package fr.terrapilot.assistant.data.db
 
 import android.content.Context
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -26,11 +29,26 @@ object DatabaseAccessGate {
     private val _epoch = MutableStateFlow(0L)
     val epoch: StateFlow<Long> = _epoch
 
+    private val _maintenanceState = MutableStateFlow(false)
+    val maintenanceState: StateFlow<Boolean> = _maintenanceState
+
     fun isMaintenanceActive(): Boolean = maintenanceInProgress
 
     suspend fun <T> withDatabase(context: Context, block: suspend (AppDatabase) -> T): T {
         return withOperation {
             block(AppDatabase.get(context))
+        }
+    }
+
+    fun <T> observeFlow(context: Context, block: (AppDatabase) -> Flow<T>): Flow<T> = flow {
+        withOperation {
+            emitAll(block(AppDatabase.get(context)))
+        }
+    }
+
+    fun <T> observeFlowWithProvider(block: () -> Flow<T>): Flow<T> = flow {
+        withOperation {
+            emitAll(block())
         }
     }
 
@@ -64,6 +82,7 @@ object DatabaseAccessGate {
                     throw IllegalStateException("Maintenance imbriquée interdite.")
                 }
                 maintenanceInProgress = true
+                _maintenanceState.value = true
                 if (activeOpsCount > 0) {
                     CompletableDeferred<Unit>().also { idleSignal = it }
                 } else {
