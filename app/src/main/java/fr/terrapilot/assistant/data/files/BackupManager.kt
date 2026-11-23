@@ -4,7 +4,8 @@ import android.content.Context
 import android.net.Uri
 import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.DatabaseAccessGate
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
@@ -114,16 +115,14 @@ object BackupManager {
         return entryRead
     }
 
-    fun exportDatabaseToZip(context: Context, destUri: Uri): BackupResult {
+    suspend fun exportDatabaseToZip(context: Context, destUri: Uri): BackupResult = withContext(Dispatchers.IO) {
         val dbFile = context.getDatabasePath("terrapilot.db")
         val mediaDir = File(context.filesDir, "chantier_files")
-        return try {
-            runBlocking {
-                DatabaseAccessGate.withOperation {
-                    val out = context.contentResolver.openOutputStream(destUri)
-                        ?: return@withOperation BackupResult(false, "Impossible d'ouvrir la destination.")
-                    out.use { exportFromFiles(dbFile, mediaDir, it) }
-                }
+        try {
+            DatabaseAccessGate.withOperation {
+                val out = context.contentResolver.openOutputStream(destUri)
+                    ?: return@withOperation BackupResult(false, "Impossible d'ouvrir la destination.")
+                out.use { exportFromFiles(dbFile, mediaDir, it) }
             }
         } catch (e: Exception) {
             BackupResult(false, "Erreur export : ${e.message}")
@@ -172,18 +171,16 @@ object BackupManager {
         }
     }
 
-    fun restoreDatabaseFromZip(context: Context, srcUri: Uri): BackupResult {
+    suspend fun restoreDatabaseFromZip(context: Context, srcUri: Uri): BackupResult = withContext(Dispatchers.IO) {
         val dbFile = context.getDatabasePath("terrapilot.db")
         val mediaDir = File(context.filesDir, "chantier_files")
         val stagingDir = File(context.cacheDir, "restore_staging_${System.currentTimeMillis()}")
-        return try {
-            runBlocking {
-                DatabaseAccessGate.runMaintenance(closeDb = { AppDatabase.closeAndReset() }) {
-                    val inp = context.contentResolver.openInputStream(srcUri)
-                        ?: return@runMaintenance BackupResult(false, "Impossible de lire l'archive.")
-                    inp.use {
-                        restoreToFiles(dbFile, mediaDir, stagingDir, it)
-                    }
+        try {
+            DatabaseAccessGate.runMaintenance(closeDb = { AppDatabase.closeAndReset() }) {
+                val inp = context.contentResolver.openInputStream(srcUri)
+                    ?: return@runMaintenance BackupResult(false, "Impossible de lire l'archive.")
+                inp.use {
+                    restoreToFiles(dbFile, mediaDir, stagingDir, it)
                 }
             }
         } catch (e: Exception) {

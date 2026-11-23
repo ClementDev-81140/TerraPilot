@@ -77,6 +77,7 @@ object DatabaseAccessGate {
             } finally {
                 stateMutex.withLock {
                     maintenanceInProgress = false
+                    _maintenanceState.value = false
                     idleSignal = null
                 }
                 _epoch.value = _epoch.value + 1

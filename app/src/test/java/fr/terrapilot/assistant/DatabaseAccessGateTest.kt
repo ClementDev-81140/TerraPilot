@@ -59,4 +59,32 @@ class DatabaseAccessGateTest {
         val ok = DatabaseAccessGate.withOperation { true }
         assertTrue(ok)
     }
+
+    @Test
+    fun collecte_flow_active_comptabilisee_et_annulation_libere_gate() = runBlocking {
+        val collecting = CompletableDeferred<Unit>()
+        var dbClosed = false
+
+        val flowJob = launch {
+            kotlinx.coroutines.flow.flow {
+                DatabaseAccessGate.withOperation {
+                    collecting.complete(Unit)
+                    emit(1)
+                    kotlinx.coroutines.delay(5000)
+                }
+            }.collect { }
+        }
+        collecting.await()
+
+        val maintJob = launch {
+            DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) { }
+        }
+        kotlinx.coroutines.delay(50)
+        assertFalse(dbClosed)
+
+        flowJob.cancel()
+        flowJob.join()
+        maintJob.join()
+        assertTrue(dbClosed)
+    }
 }
