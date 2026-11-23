@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import fr.terrapilot.assistant.data.db.AppDatabase
+import fr.terrapilot.assistant.data.db.DatabaseAccessGate
 import fr.terrapilot.assistant.domain.AppSettings
 import fr.terrapilot.assistant.domain.SettingsRepository
 import fr.terrapilot.assistant.ui.screens.*
@@ -47,7 +48,7 @@ class MainActivity : ComponentActivity() {
         val settingsRepo = SettingsRepository(this)
 
         setContent {
-            val dbEpoch by AppDatabase.epoch.collectAsState()
+            val dbEpoch by DatabaseAccessGate.epoch.collectAsState()
             val db = remember(dbEpoch) { AppDatabase.get(this) }
             val settings by settingsRepo.settingsFlow.collectAsState(initial = AppSettings())
             val chantiers by key(dbEpoch) { db.chantierDao().observeAll().collectAsState(initial = emptyList()) }

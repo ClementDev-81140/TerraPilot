@@ -3,6 +3,8 @@ package fr.terrapilot.assistant.data.files
 import android.content.Context
 import android.net.Uri
 import fr.terrapilot.assistant.data.db.AppDatabase
+import fr.terrapilot.assistant.data.db.DatabaseAccessGate
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
@@ -116,10 +118,12 @@ object BackupManager {
         val dbFile = context.getDatabasePath("terrapilot.db")
         val mediaDir = File(context.filesDir, "chantier_files")
         return try {
-            AppDatabase.runWithReadLock {
-                val out = context.contentResolver.openOutputStream(destUri)
-                    ?: return@runWithReadLock BackupResult(false, "Impossible d'ouvrir la destination.")
-                out.use { exportFromFiles(dbFile, mediaDir, it) }
+            runBlocking {
+                DatabaseAccessGate.withOperation {
+                    val out = context.contentResolver.openOutputStream(destUri)
+                        ?: return@withOperation BackupResult(false, "Impossible d'ouvrir la destination.")
+                    out.use { exportFromFiles(dbFile, mediaDir, it) }
+                }
             }
         } catch (e: Exception) {
             BackupResult(false, "Erreur export : ${e.message}")
@@ -173,11 +177,13 @@ object BackupManager {
         val mediaDir = File(context.filesDir, "chantier_files")
         val stagingDir = File(context.cacheDir, "restore_staging_${System.currentTimeMillis()}")
         return try {
-            AppDatabase.runWithMaintenanceLock {
-                val inp = context.contentResolver.openInputStream(srcUri)
-                    ?: return@runWithMaintenanceLock BackupResult(false, "Impossible de lire l'archive.")
-                inp.use {
-                    restoreToFiles(dbFile, mediaDir, stagingDir, it)
+            runBlocking {
+                DatabaseAccessGate.runMaintenance(closeDb = { AppDatabase.closeAndReset() }) {
+                    val inp = context.contentResolver.openInputStream(srcUri)
+                        ?: return@runMaintenance BackupResult(false, "Impossible de lire l'archive.")
+                    inp.use {
+                        restoreToFiles(dbFile, mediaDir, stagingDir, it)
+                    }
                 }
             }
         } catch (e: Exception) {

@@ -19,11 +19,14 @@ object DatabaseAccessGate {
     private val maintenanceMutex = Mutex()
 
     private var activeOpsCount = 0
+    @Volatile
     private var maintenanceInProgress = false
     private var idleSignal: CompletableDeferred<Unit>? = null
 
     private val _epoch = MutableStateFlow(0L)
     val epoch: StateFlow<Long> = _epoch
+
+    fun isMaintenanceActive(): Boolean = maintenanceInProgress
 
     suspend fun <T> withDatabase(context: Context, block: suspend (AppDatabase) -> T): T {
         return withOperation {

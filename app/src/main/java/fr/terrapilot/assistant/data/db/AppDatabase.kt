@@ -4,9 +4,6 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import java.util.concurrent.locks.ReentrantReadWriteLock
 
 @Database(
     entities = [
@@ -39,73 +36,27 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
-        private val rwLock = ReentrantReadWriteLock()
-        @Volatile
-        private var maintenanceInProgress = false
-        @Volatile
-        private var maintenanceThread: Thread? = null
-
-        private val _epoch = MutableStateFlow(0L)
-        val epoch: StateFlow<Long> = _epoch
 
         fun get(context: Context): AppDatabase {
-            if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
-                throw IllegalStateException("Accès à AppDatabase refusé : maintenance en cours sur ce thread.")
+            if (DatabaseAccessGate.isMaintenanceActive()) {
+                throw IllegalStateException("Accès à AppDatabase refusé : maintenance en cours.")
             }
-            rwLock.readLock().lock()
-            try {
-                if (maintenanceInProgress) {
-                    throw IllegalStateException("Accès à AppDatabase refusé : maintenance active.")
+            return INSTANCE ?: synchronized(this) {
+                if (DatabaseAccessGate.isMaintenanceActive()) {
+                    throw IllegalStateException("Accès à AppDatabase refusé : maintenance en cours.")
                 }
-                return INSTANCE ?: synchronized(this) {
-                    INSTANCE ?: Room.databaseBuilder(
-                        context.applicationContext,
-                        AppDatabase::class.java,
-                        "terrapilot.db"
-                    ).build().also { INSTANCE = it }
-                }
-            } finally {
-                rwLock.readLock().unlock()
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "terrapilot.db"
+                ).build().also { INSTANCE = it }
             }
         }
 
-        private fun closeAndReset() {
+        internal fun closeAndReset() {
             synchronized(this) {
                 INSTANCE?.close()
                 INSTANCE = null
-            }
-        }
-
-        fun <T> runWithMaintenanceLock(block: () -> T): T {
-            if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
-                throw IllegalStateException("Maintenance imbriquée interdite sur ce thread.")
-            }
-            rwLock.writeLock().lock()
-            maintenanceInProgress = true
-            maintenanceThread = Thread.currentThread()
-            try {
-                closeAndReset()
-                return block()
-            } finally {
-                maintenanceThread = null
-                maintenanceInProgress = false
-                _epoch.value = _epoch.value + 1
-                rwLock.writeLock().unlock()
-            }
-        }
-
-        fun <T> runWithReadLock(block: () -> T): T {
-            if (maintenanceInProgress && Thread.currentThread() == maintenanceThread) {
-                throw IllegalStateException("Lecture/export interdit pendant une maintenance sur ce thread.")
-            }
-            rwLock.readLock().lock()
-            try {
-                if (maintenanceInProgress) {
-                    throw IllegalStateException("Lecture/export refusé : maintenance active.")
-                }
-                return block()
-            } finally {
-                rwLock.readLock().unlock()
             }
         }
     }
