@@ -55,8 +55,11 @@ abstract class AppDatabase : RoomDatabase() {
 
         internal fun closeAndReset() {
             synchronized(this) {
-                INSTANCE?.close()
-                INSTANCE = null
+                try {
+                    INSTANCE?.close()
+                } finally {
+                    INSTANCE = null
+                }
             }
         }
     }

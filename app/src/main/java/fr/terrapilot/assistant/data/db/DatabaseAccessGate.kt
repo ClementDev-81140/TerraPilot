@@ -40,17 +40,33 @@ object DatabaseAccessGate {
         }
     }
 
-    fun <T> observeFlow(context: Context, block: (AppDatabase) -> Flow<T>): Flow<T> = flow {
-        withOperation {
-            emitAll(block(AppDatabase.get(context)))
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun <T> observeFlow(context: Context, block: (AppDatabase) -> Flow<T>): Flow<T> =
+        maintenanceState.flatMapLatest { inMaintenance ->
+            if (inMaintenance) {
+                emptyFlow()
+            } else {
+                flow {
+                    withOperation {
+                        emitAll(block(AppDatabase.get(context)))
+                    }
+                }
+            }
         }
-    }
 
-    fun <T> observeFlowWithProvider(block: () -> Flow<T>): Flow<T> = flow {
-        withOperation {
-            emitAll(block())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun <T> observeFlowWithProvider(block: () -> Flow<T>): Flow<T> =
+        maintenanceState.flatMapLatest { inMaintenance ->
+            if (inMaintenance) {
+                emptyFlow()
+            } else {
+                flow {
+                    withOperation {
+                        emitAll(block())
+                    }
+                }
+            }
         }
-    }
 
     suspend fun <T> withOperation(block: suspend () -> T): T {
         stateMutex.withLock {

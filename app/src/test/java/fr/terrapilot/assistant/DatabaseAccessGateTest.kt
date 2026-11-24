@@ -90,4 +90,32 @@ class DatabaseAccessGateTest {
         assertTrue(dbClosed)
         assertFalse(DatabaseAccessGate.maintenanceState.value)
     }
+
+    @Test
+    fun flow_permanent_annule_automatiquement_par_maintenance_et_repart() = runBlocking {
+        val firstCollect = CompletableDeferred<Unit>()
+        var collectCount = 0
+        var dbClosed = false
+
+        val flowJob = launch {
+            DatabaseAccessGate.observeFlowWithProvider {
+                kotlinx.coroutines.flow.flow {
+                    collectCount++
+                    emit(collectCount)
+                    if (collectCount == 1) firstCollect.complete(Unit)
+                    kotlinx.coroutines.delay(5000)
+                }
+            }.collect { }
+        }
+        firstCollect.await()
+
+        // Sans annuler flowJob manuellement, la maintenance doit pouvoir démarrer et fermer Room
+        DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
+            assertTrue(dbClosed)
+        }
+        kotlinx.coroutines.delay(50)
+        assertTrue(collectCount >= 2)
+        flowJob.cancel()
+        flowJob.join()
+    }
 }

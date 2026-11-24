@@ -119,9 +119,13 @@ object BackupManager {
         val dbFile = context.getDatabasePath("terrapilot.db")
         val mediaDir = File(context.filesDir, "chantier_files")
         try {
-            DatabaseAccessGate.withOperation {
+            DatabaseAccessGate.runMaintenance(closeDb = { AppDatabase.closeAndReset() }) {
+                val walFile = File(dbFile.path + "-wal")
+                if (walFile.exists() && walFile.length() > 0L) {
+                    return@runMaintenance BackupResult(false, "Export annulé : WAL résiduel non vide, état SQLite non confirmé.")
+                }
                 val out = context.contentResolver.openOutputStream(destUri)
-                    ?: return@withOperation BackupResult(false, "Impossible d'ouvrir la destination.")
+                    ?: return@runMaintenance BackupResult(false, "Impossible d'ouvrir la destination.")
                 out.use { exportFromFiles(dbFile, mediaDir, it) }
             }
         } catch (e: Exception) {
