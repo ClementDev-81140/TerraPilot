@@ -62,6 +62,29 @@ class DatabaseAccessGateTest {
     }
 
     @Test
+    fun annulation_operation_libere_compteur_et_debloque_maintenance() = runBlocking {
+        val opStarted = CompletableDeferred<Unit>()
+        val cancelOperation = launch {
+            DatabaseAccessGate.withOperation {
+                opStarted.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        opStarted.await()
+
+        val maintenance = launch {
+            DatabaseAccessGate.runMaintenance { }
+        }
+        withTimeout(2_000) { DatabaseAccessGate.maintenanceState.first { it } }
+
+        cancelOperation.cancel()
+        withTimeout(2_000) { cancelOperation.join() }
+        withTimeout(2_000) { maintenance.join() }
+        assertFalse(DatabaseAccessGate.maintenanceState.value)
+        assertTrue(DatabaseAccessGate.withOperation { true })
+    }
+
+    @Test
     fun maintenance_depuis_operation_active_refuse_sans_deadlock() = runBlocking {
         var refused = false
         DatabaseAccessGate.withOperation {
@@ -140,8 +163,10 @@ class DatabaseAccessGateTest {
         firstCollect.await()
 
         // Le collecteur n'est pas annulé manuellement : le gate doit le suspendre puis le relancer.
-        DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
-            assertTrue(dbClosed)
+        withTimeout(2_000) {
+            DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
+                assertTrue(dbClosed)
+            }
         }
         withTimeout(2_000) { secondCollect.await() }
 
