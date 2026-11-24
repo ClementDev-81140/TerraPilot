@@ -62,6 +62,20 @@ class DatabaseAccessGateTest {
     }
 
     @Test
+    fun maintenance_depuis_operation_active_refuse_sans_deadlock() = runBlocking {
+        var refused = false
+        DatabaseAccessGate.withOperation {
+            try {
+                DatabaseAccessGate.runMaintenance { }
+            } catch (_: IllegalStateException) {
+                refused = true
+            }
+        }
+        assertTrue(refused)
+        assertTrue(DatabaseAccessGate.withOperation { true })
+    }
+
+    @Test
     fun exception_pendant_maintenance_remet_gate_en_etat_et_incremente_epoch() = runBlocking {
         val beforeEpoch = DatabaseAccessGate.epoch.value
         try {
