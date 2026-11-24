@@ -4,18 +4,23 @@ import fr.terrapilot.assistant.data.db.DatabaseAccessGate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 
 class DatabaseAccessGateTest {
 
     @Test
-    fun maintenance_attend_fin_operation_en_cours_et_refuse_nouvelle_operation() = runBlocking {
+    fun maintenance_attend_operations_actives_et_met_en_attente_les_nouvelles() = runBlocking {
         val opStarted = CompletableDeferred<Unit>()
         val allowOpFinish = CompletableDeferred<Unit>()
+        val maintenanceEntered = CompletableDeferred<Unit>()
+        val allowMaintenanceFinish = CompletableDeferred<Unit>()
+        val queuedOperationEntered = CompletableDeferred<Unit>()
         var dbClosed = false
 
-        val opJob = launch {
+        val activeJob = launch {
             DatabaseAccessGate.withOperation {
                 opStarted.complete(Unit)
                 allowOpFinish.await()
@@ -23,26 +28,37 @@ class DatabaseAccessGateTest {
         }
         opStarted.await()
 
-        val maintJob = launch {
+        val maintenanceJob = launch {
             DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
-                var refused = false
-                try {
-                    DatabaseAccessGate.withOperation { }
-                } catch (_: IllegalStateException) {
-                    refused = true
-                }
-                assertTrue(refused)
+                maintenanceEntered.complete(Unit)
+                allowMaintenanceFinish.await()
             }
         }
 
-        // Tant que l'opération n'est pas terminée, closeDb ne doit pas avoir été appelé
-        kotlinx.coroutines.delay(50)
-        assertFalse(dbClosed)
+        withTimeout(2_000) { DatabaseAccessGate.maintenanceState.first { it } }
+        assertFalse("Room ne doit pas être fermé tant que l'opération active tourne", dbClosed)
+
+        val queuedJob = launch {
+            DatabaseAccessGate.withOperation {
+                queuedOperationEntered.complete(Unit)
+            }
+        }
+
+        // L'opération ponctuelle est en attente, elle ne doit pas entrer pendant la maintenance.
+        assertFalse(queuedOperationEntered.isCompleted)
 
         allowOpFinish.complete(Unit)
-        opJob.join()
-        maintJob.join()
-        assertTrue(dbClosed)
+        withTimeout(2_000) { maintenanceEntered.await() }
+        assertTrue("La fermeture doit intervenir avant le bloc de maintenance", dbClosed)
+        assertFalse("Une nouvelle opération ne doit pas entrer pendant la maintenance", queuedOperationEntered.isCompleted)
+
+        allowMaintenanceFinish.complete(Unit)
+        withTimeout(2_000) { maintenanceJob.join() }
+        withTimeout(2_000) { queuedJob.join() }
+        activeJob.join()
+
+        assertTrue(queuedOperationEntered.isCompleted)
+        assertFalse(DatabaseAccessGate.maintenanceState.value)
     }
 
     @Test
@@ -70,13 +86,13 @@ class DatabaseAccessGateTest {
                 kotlinx.coroutines.flow.flow {
                     collecting.complete(Unit)
                     emit(1)
-                    kotlinx.coroutines.delay(5000)
+                    kotlinx.coroutines.delay(5_000)
                 }
             }.collect { }
         }
         collecting.await()
 
-        val maintJob = launch {
+        val maintenanceJob = launch {
             DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
                 assertTrue(DatabaseAccessGate.maintenanceState.value)
             }
@@ -86,7 +102,7 @@ class DatabaseAccessGateTest {
 
         flowJob.cancel()
         flowJob.join()
-        maintJob.join()
+        maintenanceJob.join()
         assertTrue(dbClosed)
         assertFalse(DatabaseAccessGate.maintenanceState.value)
     }
@@ -94,6 +110,7 @@ class DatabaseAccessGateTest {
     @Test
     fun flow_permanent_annule_automatiquement_par_maintenance_et_repart() = runBlocking {
         val firstCollect = CompletableDeferred<Unit>()
+        val secondCollect = CompletableDeferred<Unit>()
         var collectCount = 0
         var dbClosed = false
 
@@ -101,20 +118,21 @@ class DatabaseAccessGateTest {
             DatabaseAccessGate.observeFlowWithProvider {
                 kotlinx.coroutines.flow.flow {
                     collectCount++
-                    emit(collectCount)
                     if (collectCount == 1) firstCollect.complete(Unit)
-                    kotlinx.coroutines.delay(5000)
+                    if (collectCount == 2) secondCollect.complete(Unit)
+                    emit(collectCount)
+                    kotlinx.coroutines.delay(5_000)
                 }
             }.collect { }
         }
         firstCollect.await()
 
-        // Sans annuler flowJob manuellement, la maintenance doit pouvoir démarrer et fermer Room
+        // Le collecteur n'est pas annulé manuellement : le gate doit le suspendre puis le relancer.
         DatabaseAccessGate.runMaintenance(closeDb = { dbClosed = true }) {
             assertTrue(dbClosed)
         }
-        kotlinx.coroutines.delay(50)
-        assertTrue(collectCount >= 2)
+        withTimeout(2_000) { secondCollect.await() }
+
         flowJob.cancel()
         flowJob.join()
     }
