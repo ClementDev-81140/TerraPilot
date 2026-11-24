@@ -3,6 +3,7 @@ package fr.terrapilot.assistant.data.db
 import android.content.Context
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -117,12 +118,17 @@ object DatabaseAccessGate {
         try {
             return withContext(OperationContext()) { block() }
         } finally {
-            stateMutex.withLock {
-                activeOpsCount--
-                check(activeOpsCount >= 0) { "Compteur d'opérations Room négatif." }
-                if (activeOpsCount == 0) {
-                    idleSignal?.complete(Unit)
-                    idleSignal = null
+            // Un Flow est souvent annulé par flatMapLatest pendant une maintenance.
+            // La libération du compteur doit alors rester non annulable, sinon la maintenance
+            // pourrait attendre indéfiniment un activeOpsCount qui ne redescend jamais.
+            withContext(NonCancellable) {
+                stateMutex.withLock {
+                    activeOpsCount--
+                    check(activeOpsCount >= 0) { "Compteur d'opérations Room négatif." }
+                    if (activeOpsCount == 0) {
+                        idleSignal?.complete(Unit)
+                        idleSignal = null
+                    }
                 }
             }
         }
@@ -162,12 +168,15 @@ object DatabaseAccessGate {
                     closeDb()
                     block()
                 } finally {
-                    stateMutex.withLock {
-                        maintenanceInProgress = false
-                        idleSignal = null
-                        maintenanceFinished?.complete(Unit)
-                        maintenanceFinished = null
-                        _maintenanceState.value = false
+                    // L'état du gate doit être libéré même si l'appelant annule la maintenance.
+                    withContext(NonCancellable) {
+                        stateMutex.withLock {
+                            maintenanceInProgress = false
+                            idleSignal = null
+                            maintenanceFinished?.complete(Unit)
+                            maintenanceFinished = null
+                            _maintenanceState.value = false
+                        }
                     }
                     _epoch.value = _epoch.value + 1
                 }
