@@ -45,6 +45,11 @@ object DatabaseAccessGate {
         companion object Key : CoroutineContext.Key<MaintenanceContext>
     }
 
+    private class OperationContext :
+        AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<OperationContext>
+    }
+
     fun isMaintenanceActive(): Boolean = maintenanceInProgress
 
     suspend fun <T> withDatabase(context: Context, block: suspend (AppDatabase) -> T): T =
@@ -106,7 +111,7 @@ object DatabaseAccessGate {
         }
 
         try {
-            return block()
+            return withContext(OperationContext()) { block() }
         } finally {
             stateMutex.withLock {
                 activeOpsCount--
@@ -129,6 +134,9 @@ object DatabaseAccessGate {
     ): T {
         check(currentCoroutineContext()[MaintenanceContext] == null) {
             "Les maintenances imbriquées sont interdites."
+        }
+        check(currentCoroutineContext()[OperationContext] == null) {
+            "Une maintenance ne peut pas être lancée depuis une opération Room active."
         }
 
         return maintenanceMutex.withLock {
