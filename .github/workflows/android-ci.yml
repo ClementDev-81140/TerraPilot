@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-and-build:
     name: Unit tests and debug APK
@@ -30,15 +34,11 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-      # The repository currently has no Gradle Wrapper JAR/configuration.
-      # Provision the exact Gradle version required by AGP 8.5.2 directly.
-      - name: Set up Gradle 8.7
+      - name: Set up Gradle and validate wrapper
         uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.7'
 
       - name: Run unit tests and build debug APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
