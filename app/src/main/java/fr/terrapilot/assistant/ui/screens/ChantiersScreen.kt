@@ -8,20 +8,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.data.db.ChantierEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.BigActionButton
 import kotlinx.coroutines.launch
 
 @Composable
 fun ChantiersScreen(
-    db: AppDatabase,
     activeChantierId: Long,
     onSelectChantier: (Long) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
-    val chantiers by (if (query.isBlank()) db.chantierDao().observeAll() else db.chantierDao().search(query))
+    val chantiers by (if (query.isBlank()) TerraRepository.observeChantiers(context) else TerraRepository.searchChantiers(context, query))
         .collectAsState(initial = emptyList())
 
     var nom by remember { mutableStateOf("") }
@@ -54,7 +55,8 @@ fun ChantiersScreen(
                     BigActionButton("Créer et ouvrir", onClick = {
                         if (nom.isNotBlank()) {
                             scope.launch {
-                                val id = db.chantierDao().insert(
+                                val id = TerraRepository.insertChantier(
+                                    context,
                                     ChantierEntity(
                                         nom = nom.trim(),
                                         adresse = adresse.trim(),
@@ -103,7 +105,7 @@ fun ChantiersScreen(
                 Button(onClick = {
                     val target = toDelete
                     toDelete = null
-                    if (target != null) scope.launch { db.chantierDao().delete(target) }
+                    if (target != null) scope.launch { TerraRepository.deleteChantier(context, target) }
                 }) { Text("Supprimer") }
             },
             dismissButton = {

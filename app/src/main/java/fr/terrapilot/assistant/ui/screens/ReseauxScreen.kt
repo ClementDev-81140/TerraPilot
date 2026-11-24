@@ -11,17 +11,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.data.db.HistoriqueEntity
 import fr.terrapilot.assistant.data.db.ReseauEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.domain.AppSettings
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReseauxScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
+fun ReseauxScreen(chantierId: Long, settings: AppSettings) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val reseaux by db.reseauDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val reseaux by TerraRepository.observeReseaux(context, chantierId).collectAsState(initial = emptyList())
 
     var type by remember { mutableStateOf("Électricité") }
     var classe by remember { mutableStateOf("B") }
@@ -57,7 +59,8 @@ fun ReseauxScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
                 BigActionButton("Enregistrer le réseau", onClick = {
                     if (chantierId > 0) {
                         scope.launch {
-                            db.reseauDao().insert(
+                            TerraRepository.insertReseau(
+                                context,
                                 ReseauEntity(
                                     chantierId = chantierId,
                                     typeReseau = type,
@@ -71,7 +74,8 @@ fun ReseauxScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
                                     lon = null
                                 )
                             )
-                            db.historiqueDao().insert(
+                            TerraRepository.insertHistorique(
+                                context,
                                 HistoriqueEntity(chantierId = chantierId, module = "Réseaux", resume = "$type (Classe $classe, prof $profondeur m)")
                             )
                         }

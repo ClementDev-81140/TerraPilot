@@ -37,7 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        fun get(context: Context): AppDatabase {
+        internal fun get(context: Context): AppDatabase {
             if (DatabaseAccessGate.isMaintenanceActive()) {
                 throw IllegalStateException("Accès à AppDatabase refusé : maintenance en cours.")
             }

@@ -12,19 +12,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.core.calcul.LevelCalculator
 import fr.terrapilot.assistant.core.calcul.LevelStatus
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.HistoriqueEntity
 import fr.terrapilot.assistant.data.db.NiveauEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.domain.AppSettings
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun NiveauxScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
+fun NiveauxScreen(chantierId: Long, settings: AppSettings) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val niveaux by db.niveauDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val niveaux by TerraRepository.observeNiveaux(context, chantierId).collectAsState(initial = emptyList())
 
     var refAlt by remember { mutableStateOf("100.00") }
     var refMire by remember { mutableStateOf("1.50") }
@@ -100,7 +102,8 @@ fun NiveauxScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
             BigActionButton("Enregistrer le point dans le chantier", onClick = {
                 if (chantierId > 0) {
                     scope.launch {
-                        db.niveauDao().insert(
+                        TerraRepository.insertNiveau(
+                            context,
                             NiveauEntity(
                                 chantierId = chantierId,
                                 nomPoint = nomPoint,
@@ -114,7 +117,8 @@ fun NiveauxScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
                                 statut = eval.status.name
                             )
                         )
-                        db.historiqueDao().insert(
+                        TerraRepository.insertHistorique(
+                            context,
                             HistoriqueEntity(chantierId = chantierId, module = "Niveaux", resume = "$nomPoint : ${eval.status.name} (${"%+.1f".format(eval.diffMeters * 100)} cm)")
                         )
                         if (settings.soundAlertsEnabled) {

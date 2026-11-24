@@ -9,17 +9,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.ChantierEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.data.files.PdfReportGenerator
 import fr.terrapilot.assistant.ui.components.BigActionButton
 import fr.terrapilot.assistant.ui.components.ResultCard
 import fr.terrapilot.assistant.ui.components.WarningBanner
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
-fun RapportsScreen(db: AppDatabase, activeChantier: ChantierEntity?) {
+fun RapportsScreen(activeChantier: ChantierEntity?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var simplified by remember { mutableStateOf(false) }
@@ -28,11 +27,8 @@ fun RapportsScreen(db: AppDatabase, activeChantier: ChantierEntity?) {
     val createPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri: Uri? ->
         if (uri != null && activeChantier != null) {
             scope.launch {
-                val niveaux = db.niveauDao().observeByChantier(activeChantier.id).first()
-                val pentes = db.penteDao().observeByChantier(activeChantier.id).first()
-                val volumes = db.volumeDao().observeByChantier(activeChantier.id).first()
-                val reseaux = db.reseauDao().observeByChantier(activeChantier.id).first()
-                val ok = PdfReportGenerator.generate(context, uri, activeChantier, niveaux, pentes, volumes, reseaux, simplified)
+                val data = TerraRepository.getReportData(context, activeChantier.id)
+                val ok = PdfReportGenerator.generate(context, uri, activeChantier, data.niveaux, data.pentes, data.volumes, data.reseaux, simplified)
                 statusMsg = if (ok) "Rapport PDF généré avec succès." else "Erreur lors de la génération PDF."
             }
         }

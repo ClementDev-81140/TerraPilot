@@ -11,17 +11,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.core.calcul.SurveyCalculator
 import fr.terrapilot.assistant.core.calcul.SurveyPointData
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.RelevePointEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReleveScreen(db: AppDatabase, chantierId: Long) {
+fun ReleveScreen(chantierId: Long) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val points by db.releveDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val points by TerraRepository.observeReleves(context, chantierId).collectAsState(initial = emptyList())
 
     var code by remember { mutableStateOf("T1") }
     var x by remember { mutableStateOf("0.0") }
@@ -62,7 +64,8 @@ fun ReleveScreen(db: AppDatabase, chantierId: Long) {
             BigActionButton("Ajouter le point", onClick = {
                 if (chantierId > 0) {
                     scope.launch {
-                        db.releveDao().insert(
+                        TerraRepository.insertReleve(
+                            context,
                             RelevePointEntity(
                                 chantierId = chantierId,
                                 codePoint = code,

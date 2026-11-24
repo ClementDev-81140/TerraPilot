@@ -23,17 +23,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.PlanEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.BigActionButton
 import fr.terrapilot.assistant.ui.components.WarningBanner
 import kotlinx.coroutines.launch
 
 @Composable
-fun PlansScreen(db: AppDatabase, chantierId: Long) {
+fun PlansScreen(chantierId: Long) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val plans by db.planDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val plans by TerraRepository.observePlans(context, chantierId).collectAsState(initial = emptyList())
 
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var strokes by remember { mutableStateOf<List<List<Offset>>>(emptyList()) }
@@ -60,7 +60,8 @@ fun PlansScreen(db: AppDatabase, chantierId: Long) {
                 }
             }
             scope.launch {
-                db.planDao().insert(
+                TerraRepository.insertPlan(
+                    context,
                     PlanEntity(
                         chantierId = chantierId,
                         nom = uri.lastPathSegment ?: "Plan",
