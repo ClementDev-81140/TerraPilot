@@ -7,10 +7,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -63,9 +63,11 @@ object DatabaseAccessGate {
             if (inMaintenance) {
                 emptyFlow()
             } else {
-                flow {
+                channelFlow {
                     withOperation {
-                        emitAll(block(AppDatabase.get(context)))
+                        block(AppDatabase.get(context)).collect { value ->
+                            send(value)
+                        }
                     }
                 }
             }
@@ -77,9 +79,11 @@ object DatabaseAccessGate {
             if (inMaintenance) {
                 emptyFlow()
             } else {
-                flow {
+                channelFlow {
                     withOperation {
-                        emitAll(block())
+                        block().collect { value ->
+                            send(value)
+                        }
                     }
                 }
             }
