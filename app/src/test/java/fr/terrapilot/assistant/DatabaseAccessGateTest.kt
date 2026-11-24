@@ -97,14 +97,12 @@ class DatabaseAccessGateTest {
                 assertTrue(DatabaseAccessGate.maintenanceState.value)
             }
         }
-        kotlinx.coroutines.delay(50)
-        assertFalse(dbClosed)
+        withTimeout(2_000) { maintenanceJob.join() }
+        assertTrue("La maintenance doit annuler automatiquement le Flow permanent", dbClosed)
+        assertFalse(DatabaseAccessGate.maintenanceState.value)
 
         flowJob.cancel()
         flowJob.join()
-        maintenanceJob.join()
-        assertTrue(dbClosed)
-        assertFalse(DatabaseAccessGate.maintenanceState.value)
     }
 
     @Test
