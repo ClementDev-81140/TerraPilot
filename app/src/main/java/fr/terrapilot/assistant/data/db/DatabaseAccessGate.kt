@@ -1,21 +1,28 @@
 package fr.terrapilot.assistant.data.db
 
 import android.content.Context
+import kotlinx.coroutines.AbstractCoroutineContextElement
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Porte d'accès centralisée compatible coroutines pour Room.
- * - Permet plusieurs opérations concurrentes hors maintenance.
- * - Bloque toute nouvelle opération dès qu'une maintenance est demandée.
- * - Attend que activeOpsCount == 0 avant de fermer Room et remplacer les fichiers.
- * - Sérialise les maintenances simultanées.
+ *
+ * Les collectes Room sont suspendues pendant une maintenance. Les opérations ponctuelles
+ * déjà commencées sont attendues ; les nouvelles écritures/lectures attendent la fin de la
+ * maintenance au lieu d'échouer dans les coroutines de l'interface.
  */
 object DatabaseAccessGate {
     private val stateMutex = Mutex()
@@ -25,6 +32,7 @@ object DatabaseAccessGate {
     @Volatile
     private var maintenanceInProgress = false
     private var idleSignal: CompletableDeferred<Unit>? = null
+    private var maintenanceFinished: CompletableDeferred<Unit>? = null
 
     private val _epoch = MutableStateFlow(0L)
     val epoch: StateFlow<Long> = _epoch
@@ -32,13 +40,17 @@ object DatabaseAccessGate {
     private val _maintenanceState = MutableStateFlow(false)
     val maintenanceState: StateFlow<Boolean> = _maintenanceState
 
+    private class MaintenanceContext :
+        AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<MaintenanceContext>
+    }
+
     fun isMaintenanceActive(): Boolean = maintenanceInProgress
 
-    suspend fun <T> withDatabase(context: Context, block: suspend (AppDatabase) -> T): T {
-        return withOperation {
+    suspend fun <T> withDatabase(context: Context, block: suspend (AppDatabase) -> T): T =
+        withOperation {
             block(AppDatabase.get(context))
         }
-    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun <T> observeFlow(context: Context, block: (AppDatabase) -> Flow<T>): Flow<T> =
@@ -68,18 +80,37 @@ object DatabaseAccessGate {
             }
         }
 
+    /**
+     * Exécute une opération courte. Si une maintenance est en cours, l'appel attend sa fin.
+     * Une opération lancée depuis le bloc de maintenance est interdite pour éviter un deadlock.
+     */
     suspend fun <T> withOperation(block: suspend () -> T): T {
-        stateMutex.withLock {
-            if (maintenanceInProgress) {
-                throw IllegalStateException("Opération refusée : maintenance de la base en cours.")
-            }
-            activeOpsCount++
+        check(currentCoroutineContext()[MaintenanceContext] == null) {
+            "Une opération Room ne peut pas être lancée depuis un bloc de maintenance."
         }
+
+        while (true) {
+            val waitForMaintenance = stateMutex.withLock {
+                if (maintenanceInProgress) {
+                    checkNotNull(maintenanceFinished) {
+                        "État de maintenance incohérent : signal de fin absent."
+                    }
+                } else {
+                    activeOpsCount++
+                    null
+                }
+            }
+
+            if (waitForMaintenance == null) break
+            waitForMaintenance.await()
+        }
+
         try {
             return block()
         } finally {
             stateMutex.withLock {
                 activeOpsCount--
+                check(activeOpsCount >= 0) { "Compteur d'opérations Room négatif." }
                 if (activeOpsCount == 0) {
                     idleSignal?.complete(Unit)
                     idleSignal = null
@@ -88,34 +119,46 @@ object DatabaseAccessGate {
         }
     }
 
+    /**
+     * Suspend les Flows, attend les opérations actives, ferme Room puis exécute la maintenance.
+     * Les opérations ponctuelles arrivant pendant cette période sont mises en attente.
+     */
     suspend fun <T> runMaintenance(
         closeDb: () -> Unit = {},
         block: suspend () -> T
     ): T {
+        check(currentCoroutineContext()[MaintenanceContext] == null) {
+            "Les maintenances imbriquées sont interdites."
+        }
+
         return maintenanceMutex.withLock {
-            val waitForIdle: CompletableDeferred<Unit>? = stateMutex.withLock {
-                if (maintenanceInProgress) {
-                    throw IllegalStateException("Maintenance imbriquée interdite.")
+            withContext(MaintenanceContext()) {
+                val waitForIdle = stateMutex.withLock {
+                    check(!maintenanceInProgress) { "Maintenance déjà active." }
+                    maintenanceInProgress = true
+                    maintenanceFinished = CompletableDeferred()
+                    _maintenanceState.value = true
+                    if (activeOpsCount > 0) {
+                        CompletableDeferred<Unit>().also { idleSignal = it }
+                    } else {
+                        null
+                    }
                 }
-                maintenanceInProgress = true
-                _maintenanceState.value = true
-                if (activeOpsCount > 0) {
-                    CompletableDeferred<Unit>().also { idleSignal = it }
-                } else {
-                    null
+
+                try {
+                    waitForIdle?.await()
+                    closeDb()
+                    block()
+                } finally {
+                    stateMutex.withLock {
+                        maintenanceInProgress = false
+                        idleSignal = null
+                        maintenanceFinished?.complete(Unit)
+                        maintenanceFinished = null
+                        _maintenanceState.value = false
+                    }
+                    _epoch.value = _epoch.value + 1
                 }
-            }
-            try {
-                waitForIdle?.await()
-                closeDb()
-                return@withLock block()
-            } finally {
-                stateMutex.withLock {
-                    maintenanceInProgress = false
-                    _maintenanceState.value = false
-                    idleSignal = null
-                }
-                _epoch.value = _epoch.value + 1
             }
         }
     }
