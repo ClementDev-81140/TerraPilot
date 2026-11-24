@@ -1,10 +1,6 @@
 name: Android CI
 
 on:
-  push:
-    branches:
-      - main
-      - fix/audit-foundation
   pull_request:
     branches:
       - main
