@@ -123,7 +123,6 @@ fun CarteScreen(chantier: ChantierEntity?) {
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
                 Lifecycle.Event.ON_PAUSE -> mapView.onPause()
                 Lifecycle.Event.ON_STOP -> mapView.onStop()
-                Lifecycle.Event.ON_LOW_MEMORY -> mapView.onLowMemory()
                 else -> Unit
             }
         }
@@ -203,13 +202,15 @@ fun CarteScreen(chantier: ChantierEntity?) {
             map.setTileCacheEnabled(true)
             map.addOnCameraIdleListener {
                 val center = map.cameraPosition.target
-                mapCenterText = String.format(
-                    Locale.FRANCE,
-                    "%.5f · %.5f · Z%.1f",
-                    center.latitude,
-                    center.longitude,
-                    map.cameraPosition.zoom
-                )
+                if (center != null) {
+                    mapCenterText = String.format(
+                        Locale.FRANCE,
+                        "%.5f · %.5f · Z%.1f",
+                        center.latitude,
+                        center.longitude,
+                        map.cameraPosition.zoom
+                    )
+                }
             }
             map.addOnMapClickListener { point ->
                 when (latestTool.value) {
