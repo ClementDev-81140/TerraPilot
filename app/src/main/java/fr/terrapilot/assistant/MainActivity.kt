@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
                                 "implantation" -> ImplantationScreen(cid)
                                 "releve" -> ReleveScreen(cid)
                                 "plans" -> PlansScreen(cid)
-                                "carte" -> CarteScreen(cid)
+                                "carte" -> CarteScreen(activeChantier)
                                 "reseaux" -> ReseauxScreen(cid, settings)
                                 "guidage" -> GuidageScreen()
                                 "photos" -> PhotosScreen(cid)

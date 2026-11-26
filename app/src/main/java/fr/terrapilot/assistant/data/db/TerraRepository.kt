@@ -110,4 +110,10 @@ object TerraRepository {
     suspend fun deleteOfflineArea(context: Context, area: OfflineAreaEntity) =
         DatabaseAccessGate.withDatabase(context) { it.offlineAreaDao().delete(area) }
 
+    suspend fun updateChantierLocation(context: Context, id: Long, latitude: Double, longitude: Double) =
+        DatabaseAccessGate.withDatabase(context) { db ->
+            val current = db.chantierDao().getById(id) ?: return@withDatabase
+            db.chantierDao().update(current.copy(originLat = latitude, originLon = longitude))
+        }
+
 }
