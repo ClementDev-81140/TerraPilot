@@ -1,6 +1,7 @@
 {
   "version": 8,
   "name": "TerraPilot - Photo aérienne IGN",
+  "glyphs": "https://data.geopf.fr/annexes/ressources/vectorTiles/fonts/{fontstack}/{range}.pbf",
   "sources": {
     "ign-ortho": {
       "type": "raster",
