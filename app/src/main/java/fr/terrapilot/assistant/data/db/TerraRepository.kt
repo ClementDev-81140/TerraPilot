@@ -22,7 +22,11 @@ object TerraRepository {
         DatabaseAccessGate.withDatabase(context) { it.chantierDao().insert(c) }
 
     suspend fun deleteChantier(context: Context, c: ChantierEntity) =
-        DatabaseAccessGate.withDatabase(context) { it.chantierDao().delete(c) }
+        DatabaseAccessGate.withDatabase(context) { db ->
+            db.mapFeatureDao().deleteByChantier(c.id)
+            db.offlineAreaDao().deleteByChantier(c.id)
+            db.chantierDao().delete(c)
+        }
 
     fun observeNiveaux(context: Context, cid: Long): Flow<List<NiveauEntity>> =
         DatabaseAccessGate.observeFlow(context) { it.niveauDao().observeByChantier(cid) }
@@ -87,4 +91,23 @@ object TerraRepository {
                 reseaux = db.reseauDao().observeByChantier(cid).first()
             )
         }
+
+    fun observeMapFeatures(context: Context, cid: Long): Flow<List<MapFeatureEntity>> =
+        DatabaseAccessGate.observeFlow(context) { it.mapFeatureDao().observeByChantier(cid) }
+
+    suspend fun insertMapFeature(context: Context, feature: MapFeatureEntity): Long =
+        DatabaseAccessGate.withDatabase(context) { it.mapFeatureDao().insert(feature) }
+
+    suspend fun deleteMapFeature(context: Context, feature: MapFeatureEntity) =
+        DatabaseAccessGate.withDatabase(context) { it.mapFeatureDao().delete(feature) }
+
+    fun observeOfflineAreas(context: Context, cid: Long): Flow<List<OfflineAreaEntity>> =
+        DatabaseAccessGate.observeFlow(context) { it.offlineAreaDao().observeByChantier(cid) }
+
+    suspend fun upsertOfflineArea(context: Context, area: OfflineAreaEntity) =
+        DatabaseAccessGate.withDatabase(context) { it.offlineAreaDao().upsert(area) }
+
+    suspend fun deleteOfflineArea(context: Context, area: OfflineAreaEntity) =
+        DatabaseAccessGate.withDatabase(context) { it.offlineAreaDao().delete(area) }
+
 }

@@ -133,3 +133,46 @@ data class HistoriqueEntity(
     val resume: String,
     val date: Long = System.currentTimeMillis()
 )
+
+
+@Entity(
+    tableName = "map_features",
+    indices = [androidx.room.Index(value = ["chantierId"])]
+)
+data class MapFeatureEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val chantierId: Long,
+    /** POINT, ZONE or LEVEL. */
+    val kind: String,
+    val name: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val targetAltitudeM: Double? = null,
+    /** GeoJSON Geometry only (Point or Polygon), coordinates in longitude/latitude order. */
+    val geometryJson: String,
+    val colorHex: String = "#F57C00",
+    val notes: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "offline_areas",
+    indices = [androidx.room.Index(value = ["chantierId"])]
+)
+data class OfflineAreaEntity(
+    /** MapLibre's own offline region identifier. */
+    @PrimaryKey val mapLibreRegionId: Long,
+    val chantierId: Long,
+    val name: String,
+    val west: Double,
+    val south: Double,
+    val east: Double,
+    val north: Double,
+    val minZoom: Double,
+    val maxZoom: Double,
+    val completedResources: Long = 0,
+    val requiredResources: Long = 0,
+    val downloadedBytes: Long = 0,
+    val isComplete: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)

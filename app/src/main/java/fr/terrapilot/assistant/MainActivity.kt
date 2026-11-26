@@ -111,7 +111,18 @@ class MainActivity : ComponentActivity() {
                             val cid = activeChantier?.id ?: -1L
                             when (currentRoute) {
                                 "accueil" -> HomeScreen(activeChantier) { currentRoute = it }
-                                "chantiers" -> ChantiersScreen(cid) { id -> scope.launch { settingsRepo.setActiveChantier(id) } }
+                                "chantiers" -> ChantiersScreen(
+                                    activeChantierId = cid,
+                                    onSelectChantier = { id ->
+                                        scope.launch { settingsRepo.setActiveChantier(id) }
+                                    },
+                                    onCreatedChantier = { id ->
+                                        scope.launch {
+                                            settingsRepo.setActiveChantier(id)
+                                            currentRoute = "carte"
+                                        }
+                                    }
+                                )
                                 "niveaux" -> NiveauxScreen(cid, settings)
                                 "pentes" -> PentesScreen(cid)
                                 "volumes" -> VolumesScreen(cid, settings)
