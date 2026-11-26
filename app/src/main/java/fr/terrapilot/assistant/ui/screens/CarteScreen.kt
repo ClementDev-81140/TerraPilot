@@ -60,7 +60,7 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.tan
 
-private const val IGN_PLAN_STYLE = "asset://ign_plan_style.json"
+private const val IGN_PLAN_STYLE = "https://data.geopf.fr/annexes/ressources/vectorTiles/styles/PLAN.IGN/standard.json"
 private const val IGN_ORTHO_STYLE = "asset://ign_ortho_style.json"
 private const val FEATURES_SOURCE = "terrapilot-features"
 private const val ZONE_FILL = "terrapilot-zone-fill"
@@ -187,7 +187,25 @@ fun CarteScreen(chantier: ChantierEntity?) {
             }
         } else {
             map.cameraPosition = CameraPosition.Builder().target(LatLng(46.5, 2.4)).zoom(5.5).build()
-            mapMessage = "Recherche une adresse ou utilise « Ma position » pour centrer la carte."
+            val fineGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            val coarseGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (fineGranted || coarseGranted) {
+                moveToCurrentLocation(locationClient, map) { mapMessage = it }
+            } else {
+                mapMessage = "Recherche du chantier : autorise la localisation ou saisis son adresse."
+                permissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                )
+            }
         }
     }
 
@@ -753,6 +771,7 @@ private fun installFeatureLayers(style: Style, geoJson: String) {
             SymbolLayer(LABELS_LAYER, FEATURES_SOURCE).withProperties(
                 PropertyFactory.textField("{name}"),
                 PropertyFactory.textSize(11f),
+                PropertyFactory.textFont(arrayOf("Source Sans Pro")),
                 PropertyFactory.textColor(android.graphics.Color.parseColor("#172127")),
                 PropertyFactory.textHaloColor(android.graphics.Color.WHITE),
                 PropertyFactory.textHaloWidth(1.5f),
@@ -766,8 +785,13 @@ private fun makeFeatureCollection(features: List<MapFeatureEntity>, draftVertice
     val objects = JSONArray()
     features.forEach { feature ->
         try {
+            val displayName = if (feature.kind == "LEVEL" && feature.targetAltitudeM != null) {
+                feature.name + " · " + String.format(Locale.FRANCE, "%.2f m", feature.targetAltitudeM)
+            } else {
+                feature.name
+            }
             val properties = JSONObject()
-                .put("name", feature.name)
+                .put("name", displayName)
                 .put("kind", feature.kind)
                 .put("targetAltitudeM", feature.targetAltitudeM)
                 .put("color", feature.colorHex)
