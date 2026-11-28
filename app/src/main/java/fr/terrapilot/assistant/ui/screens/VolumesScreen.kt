@@ -8,19 +8,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.core.calcul.TrenchSection
 import fr.terrapilot.assistant.core.calcul.VolumeCalculator
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.HistoriqueEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.data.db.VolumeEntity
 import fr.terrapilot.assistant.domain.AppSettings
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun VolumesScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
+fun VolumesScreen(chantierId: Long, settings: AppSettings) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val volumes by db.volumeDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val volumes by TerraRepository.observeVolumes(context, chantierId).collectAsState(initial = emptyList())
 
     var type by remember { mutableStateOf("Tranchée") }
     var longueur by remember { mutableStateOf("10.0") }
@@ -67,7 +69,8 @@ fun VolumesScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
             BigActionButton("Enregistrer le volume", onClick = {
                 if (chantierId > 0) {
                     scope.launch {
-                        db.volumeDao().insert(
+                        TerraRepository.insertVolume(
+                            context,
                             VolumeEntity(
                                 chantierId = chantierId,
                                 typeOuvrage = type,
@@ -77,7 +80,8 @@ fun VolumesScreen(db: AppDatabase, chantierId: Long, settings: AppSettings) {
                                 coeffFoisonnement = summary.swellFactor
                             )
                         )
-                        db.historiqueDao().insert(
+                        TerraRepository.insertHistorique(
+                            context,
                             HistoriqueEntity(chantierId = chantierId, module = "Terrassement", resume = "$type : ${"%.2f".format(summary.netVolumeM3)} m³")
                         )
                     }

@@ -119,3 +119,34 @@ interface HistoriqueDao {
     @Insert
     suspend fun insert(item: HistoriqueEntity): Long
 }
+
+
+@Dao
+interface MapFeatureDao {
+    @Query("SELECT * FROM map_features WHERE chantierId = :cid ORDER BY createdAt ASC")
+    fun observeByChantier(cid: Long): Flow<List<MapFeatureEntity>>
+
+    @Insert
+    suspend fun insert(item: MapFeatureEntity): Long
+
+    @Delete
+    suspend fun delete(item: MapFeatureEntity)
+
+    @Query("DELETE FROM map_features WHERE chantierId = :cid")
+    suspend fun deleteByChantier(cid: Long)
+}
+
+@Dao
+interface OfflineAreaDao {
+    @Query("SELECT * FROM offline_areas WHERE chantierId = :cid ORDER BY createdAt DESC")
+    fun observeByChantier(cid: Long): Flow<List<OfflineAreaEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: OfflineAreaEntity)
+
+    @Delete
+    suspend fun delete(item: OfflineAreaEntity)
+
+    @Query("DELETE FROM offline_areas WHERE chantierId = :cid")
+    suspend fun deleteByChantier(cid: Long)
+}

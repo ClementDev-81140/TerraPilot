@@ -13,23 +13,29 @@ import fr.terrapilot.assistant.data.files.BackupManager
 import fr.terrapilot.assistant.ui.components.BigActionButton
 import fr.terrapilot.assistant.ui.components.ResultCard
 import fr.terrapilot.assistant.ui.components.WarningBanner
+import kotlinx.coroutines.launch
 
 @Composable
 fun SauvegardesScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
 
     val exportZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri: Uri? ->
         if (uri != null) {
-            val res = BackupManager.exportDatabaseToZip(context, uri)
-            status = if (res.success) "${res.message}\nSHA-256 : ${res.sha256}" else res.message
+            scope.launch {
+                val res = BackupManager.exportDatabaseToZip(context, uri)
+                status = if (res.success) "${res.message}\nSHA-256 : ${res.sha256}" else res.message
+            }
         }
     }
 
     val importZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
-            val res = BackupManager.restoreDatabaseFromZip(context, uri)
-            status = res.message
+            scope.launch {
+                val res = BackupManager.restoreDatabaseFromZip(context, uri)
+                status = res.message
+            }
         }
     }
 

@@ -117,4 +117,55 @@ class CalculsTest {
         assertEquals(2.0, res.fillM3, 0.001)
         assertEquals(0.0, res.balanceM3, 0.001)
     }
+
+    @Test
+    fun fondations_isolees_volume() {
+        val res = VolumeCalculator.foundations(listOf(FoundationFooting(4, 1.0, 1.0, 0.8)))
+        assertEquals(3.20, res.netVolumeM3, 0.001)
+        assertEquals(4.00, res.surfaceM2, 0.001)
+    }
+
+    @Test
+    fun releve_grille_idw_cut_fill() {
+        val pts = listOf(
+            SurveyPointData("P1", 0.0, 0.0, 100.2, "ruban"),
+            SurveyPointData("P2", 10.0, 0.0, 100.2, "ruban"),
+            SurveyPointData("P3", 10.0, 10.0, 100.2, "ruban"),
+            SurveyPointData("P4", 0.0, 10.0, 100.2, "ruban")
+        )
+        val res = SurveyCalculator.gridIdwCutFill(pts, targetZ = 100.0, gridResolution = 5)
+        assertEquals(20.0, res.cutM3, 0.01)
+        assertEquals(0.0, res.fillM3, 0.01)
+    }
+
+    @Test
+    fun reseau_proximite_segment() {
+        val seg = NetworkSegment(0.0, 0.0, 10.0, 0.0)
+        val alert = NetworkProximityCalculator.evaluateProximity(5.0, 1.0, seg, userMarginMeters = 1.0, precisionClass = "B")
+        assertTrue(alert.isWithinMargin)
+        assertEquals(1.0, alert.distanceMeters, 0.001)
+        assertEquals(1.5, alert.effectiveMarginMeters, 0.001)
+    }
+
+    @Test
+    fun releve_terrain_incline_points_irreguliers() {
+        val pts = listOf(
+            SurveyPointData("P1", 0.0, 0.0, 100.0, "ruban"),
+            SurveyPointData("P2", 10.0, 0.0, 101.0, "ruban"),
+            SurveyPointData("P3", 10.0, 10.0, 101.0, "ruban"),
+            SurveyPointData("P4", 0.0, 10.0, 100.0, "ruban"),
+            SurveyPointData("P5", 3.5, 6.2, 100.35, "ruban")
+        )
+        val res = SurveyCalculator.gridIdwCutFill(pts, targetZ = 100.0, gridResolution = 10)
+        assertTrue(res.cutM3 > 30.0 && res.cutM3 < 70.0)
+        assertEquals(0.0, res.fillM3, 0.001)
+    }
+
+    @Test
+    fun reseau_segment_degenere_et_extremites() {
+        val deg = NetworkSegment(2.0, 3.0, 2.0, 3.0)
+        assertEquals(5.0, NetworkProximityCalculator.distancePointToSegment(5.0, 7.0, deg), 0.001)
+        val seg = NetworkSegment(0.0, 0.0, 10.0, 0.0)
+        assertEquals(5.0, NetworkProximityCalculator.distancePointToSegment(13.0, 4.0, seg), 0.001)
+    }
 }

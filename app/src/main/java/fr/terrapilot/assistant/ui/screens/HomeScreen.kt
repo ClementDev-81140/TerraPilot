@@ -8,21 +8,22 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.data.db.ChantierEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.BigActionButton
 import fr.terrapilot.assistant.ui.components.ResultCard
 import fr.terrapilot.assistant.ui.components.WarningBanner
 
 @Composable
 fun HomeScreen(
-    db: AppDatabase,
     activeChantier: ChantierEntity?,
     onNavigate: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val cid = activeChantier?.id ?: -1L
-    val niveaux by db.niveauDao().observeByChantier(cid).collectAsState(initial = emptyList())
-    val historique by db.historiqueDao().observeByChantier(cid).collectAsState(initial = emptyList())
+    val niveaux by TerraRepository.observeNiveaux(context, cid).collectAsState(initial = emptyList())
+    val historique by TerraRepository.observeHistorique(context, cid).collectAsState(initial = emptyList())
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),

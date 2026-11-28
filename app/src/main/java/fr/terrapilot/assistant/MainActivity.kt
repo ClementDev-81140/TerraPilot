@@ -13,7 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
+import fr.terrapilot.assistant.data.db.DatabaseAccessGate
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.domain.AppSettings
 import fr.terrapilot.assistant.domain.SettingsRepository
 import fr.terrapilot.assistant.ui.screens.*
@@ -44,12 +45,12 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val db = AppDatabase.get(this)
         val settingsRepo = SettingsRepository(this)
 
         setContent {
+            val dbEpoch by DatabaseAccessGate.epoch.collectAsState()
             val settings by settingsRepo.settingsFlow.collectAsState(initial = AppSettings())
-            val chantiers by db.chantierDao().observeAll().collectAsState(initial = emptyList())
+            val chantiers by key(dbEpoch) { TerraRepository.observeChantiers(this).collectAsState(initial = emptyList()) }
             val activeChantier = chantiers.find { it.id == settings.activeChantierId } ?: chantiers.firstOrNull()
 
             LaunchedEffect(settings.orientationMode) {
@@ -105,25 +106,38 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     ) { padding ->
-                        Box(Modifier.padding(padding).fillMaxSize()) {
+                        key(dbEpoch) {
+                            Box(Modifier.padding(padding).fillMaxSize()) {
                             val cid = activeChantier?.id ?: -1L
                             when (currentRoute) {
-                                "accueil" -> HomeScreen(db, activeChantier) { currentRoute = it }
-                                "chantiers" -> ChantiersScreen(db, cid) { id -> scope.launch { settingsRepo.setActiveChantier(id) } }
-                                "niveaux" -> NiveauxScreen(db, cid, settings)
-                                "pentes" -> PentesScreen(db, cid)
-                                "volumes" -> VolumesScreen(db, cid, settings)
-                                "implantation" -> ImplantationScreen(db, cid)
-                                "releve" -> ReleveScreen(db, cid)
-                                "plans" -> PlansScreen(db, cid)
-                                "carte" -> CarteScreen(cid)
-                                "reseaux" -> ReseauxScreen(db, cid, settings)
+                                "accueil" -> HomeScreen(activeChantier) { currentRoute = it }
+                                "chantiers" -> ChantiersScreen(
+                                    activeChantierId = cid,
+                                    onSelectChantier = { id ->
+                                        scope.launch { settingsRepo.setActiveChantier(id) }
+                                    },
+                                    onCreatedChantier = { id ->
+                                        scope.launch {
+                                            settingsRepo.setActiveChantier(id)
+                                            currentRoute = "carte"
+                                        }
+                                    }
+                                )
+                                "niveaux" -> NiveauxScreen(cid, settings)
+                                "pentes" -> PentesScreen(cid)
+                                "volumes" -> VolumesScreen(cid, settings)
+                                "implantation" -> ImplantationScreen(cid)
+                                "releve" -> ReleveScreen(cid)
+                                "plans" -> PlansScreen(cid)
+                                "carte" -> CarteScreen(activeChantier)
+                                "reseaux" -> ReseauxScreen(cid, settings)
                                 "guidage" -> GuidageScreen()
-                                "photos" -> PhotosScreen(db, cid)
-                                "rapports" -> RapportsScreen(db, activeChantier)
+                                "photos" -> PhotosScreen(cid)
+                                "rapports" -> RapportsScreen(activeChantier)
                                 "sauvegardes" -> SauvegardesScreen()
                                 "parametres" -> ParametresScreen(settings, settingsRepo)
                             }
+                        }
                         }
                     }
                 }

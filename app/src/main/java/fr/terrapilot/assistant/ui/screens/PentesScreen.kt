@@ -8,17 +8,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.core.calcul.SlopeCalculator
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.HistoriqueEntity
 import fr.terrapilot.assistant.data.db.PenteEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun PentesScreen(db: AppDatabase, chantierId: Long) {
+fun PentesScreen(chantierId: Long) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val pentes by db.penteDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val pentes by TerraRepository.observePentes(context, chantierId).collectAsState(initial = emptyList())
 
     var mode by remember { mutableStateOf("A") } // A %, B cm/m, C 2 altitudes
     var libelle by remember { mutableStateOf("Tranchée évacuation") }
@@ -83,7 +85,8 @@ fun PentesScreen(db: AppDatabase, chantierId: Long) {
             BigActionButton("Enregistrer dans le chantier", onClick = {
                 if (chantierId > 0) {
                     scope.launch {
-                        db.penteDao().insert(
+                        TerraRepository.insertPente(
+                            context,
                             PenteEntity(
                                 chantierId = chantierId,
                                 libelle = libelle,
@@ -93,7 +96,8 @@ fun PentesScreen(db: AppDatabase, chantierId: Long) {
                                 deniveleMetres = result.deltaHeightMeters
                             )
                         )
-                        db.historiqueDao().insert(
+                        TerraRepository.insertHistorique(
+                            context,
                             HistoriqueEntity(chantierId = chantierId, module = "Pentes", resume = "$libelle : ${"%.2f".format(result.percent)} %")
                         )
                     }

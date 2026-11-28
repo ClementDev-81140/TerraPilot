@@ -1,5 +1,8 @@
 package fr.terrapilot.assistant.core.calcul
 
+import kotlin.math.hypot
+import kotlin.math.pow
+
 data class SurveyPointData(
     val id: String,
     val x: Double,
@@ -49,10 +52,51 @@ object SurveyCalculator {
         )
     }
 
-    fun averageTargetComparison(points: List<SurveyPointData>, targetZ: Double, areaM2: Double): CutFillSummary {
-        val existing = points.map { it.z }
-        val target = List(points.size) { targetZ }
-        val cellArea = if (points.isNotEmpty()) areaM2 / points.size else 0.0
-        return VolumeCalculator.cutFillFromGrid(existing, target, cellArea)
+    /**
+     * Calcul des déblais/remblais par interpolation IDW (Inverse Distance Weighting)
+     * sur une grille régulière N×N couvrant l'emprise du relevé.
+     */
+    fun gridIdwCutFill(
+        points: List<SurveyPointData>,
+        targetZ: Double,
+        gridResolution: Int = 10,
+        swellFactor: Double = 1.25
+    ): CutFillSummary {
+        require(points.size >= 4) { "Au moins 4 points sont requis pour la grille IDW" }
+        require(gridResolution >= 2) { "Résolution de grille >= 2 requise" }
+        val minX = points.minOf { it.x }
+        val maxX = points.maxOf { it.x }
+        val minY = points.minOf { it.y }
+        val maxY = points.maxOf { it.y }
+        val dx = (maxX - minX) / gridResolution
+        val dy = (maxY - minY) / gridResolution
+        val cellArea = dx * dy
+
+        val existing = mutableListOf<Double>()
+        val target = mutableListOf<Double>()
+
+        for (ix in 0 until gridResolution) {
+            val cx = minX + (ix + 0.5) * dx
+            for (iy in 0 until gridResolution) {
+                val cy = minY + (iy + 0.5) * dy
+                val zInterp = interpolateIdw(points, cx, cy)
+                existing.add(zInterp)
+                target.add(targetZ)
+            }
+        }
+        return VolumeCalculator.cutFillFromGrid(existing, target, cellArea, swellFactor)
+    }
+
+    private fun interpolateIdw(points: List<SurveyPointData>, x: Double, y: Double, power: Double = 2.0): Double {
+        var num = 0.0
+        var den = 0.0
+        for (p in points) {
+            val d = hypot(p.x - x, p.y - y)
+            if (d < 1e-6) return p.z
+            val w = 1.0 / d.pow(power)
+            num += w * p.z
+            den += w
+        }
+        return num / den
     }
 }

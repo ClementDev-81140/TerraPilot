@@ -11,17 +11,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.core.calcul.SurveyCalculator
 import fr.terrapilot.assistant.core.calcul.SurveyPointData
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.RelevePointEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReleveScreen(db: AppDatabase, chantierId: Long) {
+fun ReleveScreen(chantierId: Long) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val points by db.releveDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val points by TerraRepository.observeReleves(context, chantierId).collectAsState(initial = emptyList())
 
     var code by remember { mutableStateOf("T1") }
     var x by remember { mutableStateOf("0.0") }
@@ -29,13 +31,11 @@ fun ReleveScreen(db: AppDatabase, chantierId: Long) {
     var z by remember { mutableStateOf("100.00") }
     var methode by remember { mutableStateOf("Mètre ruban") }
     var cibleZ by remember { mutableStateOf("99.80") }
-    var surfaceEstimee by remember { mutableStateOf("50.0") }
 
     val surveyData = points.map { SurveyPointData(it.codePoint, it.x, it.y, it.z, it.methode) }
     val rel = SurveyCalculator.assessReliability(surveyData)
     val cz = cibleZ.replace(',', '.').toDoubleOrNull() ?: 99.8
-    val area = surfaceEstimee.replace(',', '.').toDoubleOrNull() ?: 50.0
-    val cutFill = if (rel.isReliableForVolume) SurveyCalculator.averageTargetComparison(surveyData, cz, area) else null
+    val cutFill = if (rel.isReliableForVolume) SurveyCalculator.gridIdwCutFill(surveyData, cz) else null
 
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -64,7 +64,8 @@ fun ReleveScreen(db: AppDatabase, chantierId: Long) {
             BigActionButton("Ajouter le point", onClick = {
                 if (chantierId > 0) {
                     scope.launch {
-                        db.releveDao().insert(
+                        TerraRepository.insertReleve(
+                            context,
                             RelevePointEntity(
                                 chantierId = chantierId,
                                 codePoint = code,
@@ -107,14 +108,13 @@ fun ReleveScreen(db: AppDatabase, chantierId: Long) {
 
         item {
             UnitNumberField(cibleZ, { cibleZ = it }, "Altitude projetée", "m")
-            Spacer(Modifier.height(6.dp))
-            UnitNumberField(surfaceEstimee, { surfaceEstimee = it }, "Surface d'emprise", "m²")
             if (cutFill != null) {
                 Spacer(Modifier.height(8.dp))
-                ResultCard("Comparaison existant / projeté") {
+                ResultCard("Comparaison existant / projeté (grille IDW)") {
                     Text("Déblais (à creuser) : ${"%.2f".format(cutFill.cutM3)} m³", fontWeight = FontWeight.Bold)
                     Text("Remblais (à apporter) : ${"%.2f".format(cutFill.fillM3)} m³")
                     Text("Bilan global : ${"%+.2f".format(cutFill.balanceM3)} m³")
+                    Text("Hypothèse : interpolation IDW sur la boîte englobante des points. Fiabilité liée à la densité du relevé.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

@@ -8,17 +8,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.core.calcul.ImplantationCalculator
-import fr.terrapilot.assistant.data.db.AppDatabase
 import fr.terrapilot.assistant.data.db.HistoriqueEntity
 import fr.terrapilot.assistant.data.db.ImplantationEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun ImplantationScreen(db: AppDatabase, chantierId: Long) {
+fun ImplantationScreen(chantierId: Long) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val itemsList by db.implantationDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val itemsList by TerraRepository.observeImplantations(context, chantierId).collectAsState(initial = emptyList())
 
     var ouvrage by remember { mutableStateOf("Fondation garage") }
     var longueur by remember { mutableStateOf("4.0") }
@@ -61,7 +63,8 @@ fun ImplantationScreen(db: AppDatabase, chantierId: Long) {
             BigActionButton("Enregistrer l'implantation", onClick = {
                 if (chantierId > 0) {
                     scope.launch {
-                        db.implantationDao().insert(
+                        TerraRepository.insertImplantation(
+                            context,
                             ImplantationEntity(
                                 chantierId = chantierId,
                                 ouvrage = ouvrage,
@@ -73,7 +76,8 @@ fun ImplantationScreen(db: AppDatabase, chantierId: Long) {
                                 equerrageOk = sq.isSquare
                             )
                         )
-                        db.historiqueDao().insert(
+                        TerraRepository.insertHistorique(
+                            context,
                             HistoriqueEntity(chantierId = chantierId, module = "Implantation", resume = "$ouvrage (${l}×${w} m) : diag ${"%.2f".format(rect.expectedDiagonalMeters)} m")
                         )
                     }

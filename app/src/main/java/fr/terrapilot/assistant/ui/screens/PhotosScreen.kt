@@ -11,15 +11,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import fr.terrapilot.assistant.data.db.AppDatabase
+import androidx.compose.ui.platform.LocalContext
 import fr.terrapilot.assistant.data.db.PhotoEntity
+import fr.terrapilot.assistant.data.db.TerraRepository
 import fr.terrapilot.assistant.ui.components.BigActionButton
 import kotlinx.coroutines.launch
 
 @Composable
-fun PhotosScreen(db: AppDatabase, chantierId: Long) {
+fun PhotosScreen(chantierId: Long) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val photos by db.photoDao().observeByChantier(chantierId).collectAsState(initial = emptyList())
+    val photos by TerraRepository.observePhotos(context, chantierId).collectAsState(initial = emptyList())
 
     var phase by remember { mutableStateOf("Pendant") }
     var commentaire by remember { mutableStateOf("") }
@@ -27,7 +29,8 @@ fun PhotosScreen(db: AppDatabase, chantierId: Long) {
     val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null && chantierId > 0) {
             scope.launch {
-                db.photoDao().insert(
+                TerraRepository.insertPhoto(
+                    context,
                     PhotoEntity(
                         chantierId = chantierId,
                         uriString = uri.toString(),
